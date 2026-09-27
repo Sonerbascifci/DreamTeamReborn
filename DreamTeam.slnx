@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/DreamTeam.Domain/DreamTeam.Domain.csproj" />
     <Project Path="src/DreamTeam.MatchEngine/DreamTeam.MatchEngine.csproj" />
+    <Project Path="src/DreamTeam.Simulator/DreamTeam.Simulator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DreamTeam.MatchEngine.Tests/DreamTeam.MatchEngine.Tests.csproj" />

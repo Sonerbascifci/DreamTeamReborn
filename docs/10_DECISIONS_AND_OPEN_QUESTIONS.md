@@ -64,9 +64,9 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q01 | Yeni repo mu mevcut repo mu; hangi SDK/test sistemi? | Gerçek ortamı incele; uyumlu sürümü kilitle | M0, M1 engeli | **Çözüldü → D20, D21** |
 | Q02 | RNG ve determinism garanti kapsamı? | Sürümlü algoritma + başlangıçta kilitli runtime; platformlar arası ayrıca test | M0, M1 engeli | **Çözüldü → D22, D23** |
 | Q03 | Kimlik, snapshot ve zaman birimi? | Tutarlı Guid/strong ID, immutable giriş, integer ms | M0/M1 | **Çözüldü → D24, D25** |
-| Q04 | Sade profil mi tam NBA/FIBA mı? | 06 belgesindeki açıkça sade profil | M0/M2 | Açık — M2'de karar verilecek |
-| Q05 | Start possession ve periyot açılışı? | Home/away simetrisini koruyan açık protokol | M2 | Açık |
-| Q06 | Tüm olasılık katsayıları ve eylem süreleri? | Baseline config v0.1, ölçümle tuning | M2/M4 | Açık |
+| Q04 | Sade profil mi tam NBA/FIBA mı? | 06 belgesindeki açıkça sade profil | M0/M2 | **Çözüldü → D31** |
+| Q05 | Start possession ve periyot açılışı? | Home/away simetrisini koruyan açık protokol | M2 | **Çözüldü → D32** |
+| Q06 | Tüm olasılık katsayıları ve eylem süreleri? | Baseline config v0.1, ölçümle tuning | M2/M4 | **Kısmen çözüldü → D35, D39.** Yapı ve başlangıç değerleri kilitli; **sayısal kalibrasyon M6'ya kaldı** |
 | Q07 | Bonus, foul-out, az oyuncu terminal policy? | Sade profil; forfeit/abort farkı açık | M3 | Açık |
 | Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | Açık |
 | Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | Açık |
@@ -102,4 +102,30 @@ Kullanıcı 27 Eylül 2026'da `docs/plans/M1_IMPLEMENTATION_PLAN.md` dosyasını
 | D27 | `EngineIdentity` boş alanları ve motorun yerleşik sürüm/RNG kimliğiyle uyumsuzluğu reddeder | Kullanıcı onayı (uygulama kararı) | Seed tek başına maçı tanımlamaz. Kabul testleri: `IncompleteEngineIdentityIsRejected`, `EngineVersionMismatchIsRejected`, `RngIdentityMismatchIsRejected`. |
 | D28 | Solution biçimi `DreamTeam.slnx` (yeni XML solution formatı) | Kullanıcı onayı (uygulama kararı) | .NET 10 SDK'sının `dotnet new sln` şablonu `.slnx` üretir. 03 belgesi her iki biçimi de kabul eder. |
 | D29 | Rating aralık doğrulaması modelde değil `MatchSetupValidator` içinde; `IRandomSource` arayüzü kontrollü test double sınırı olarak durur | Kullanıcı onayı (uygulama kararı) | Tek kapı, makine tarafından okunabilir hata kodu üretir. 08 belgesi dallanan kurallar için test double şart koşar; M1'de henüz tüketici yok. |
-| D30 | M1'de composite rating, OVR, tactics, pace, stamina ve maç akışı yok | Kullanıcı onayı | 09 roadmap M1 kapsamı. `MatchSetup` bu alanları M2'de `TeamMatchSetup` ile ekleyecek. |
+| D30 | M1'de composite rating, OVR, tactics, pace, stamina ve maç akışı yok | Kullanıcı onayı | 09 roadmap M1 kapsamı. `MatchSetup` bu alanları **M4'te** `TeamMatchSetup` ile ekleyecek — aşağıda D34 bu kaydı düzeltir. |
+
+## 7. M2 kararları — 27 Eylül 2026
+
+Kullanıcı 27 Eylül 2026'da `docs/plans/M2_IMPLEMENTATION_PLAN.md` dosyasını ve D31–D33'ü onayladı; ardından M2 uygulama yetkisini verdi. D34–D39 uygulama sırasında alınan kararlardır.
+
+| ID | Karar | Durum | Gerekçe ve kabul kanıtı |
+|---|---|---|---|
+| D31 | Kural profili: **sade NBA-esinli** — 4 × 12 dk, 24 sn hücum saati, 5 dk uzatma (tanımlı ama kullanılmıyor) | Kullanıcı onayı | 06 §1'deki H08 devir önerisi. Tam NBA sadakati iddiası yok; bonus/foul-out M3, timeout M5'e kaldı. |
+| D32 | Periyot açılışı: seeded RNG **tek bit** (`NextUInt64() & 1`) | Kullanıcı onayı | 06 §4 "home/away bias yaratmayacak seeded yöntem". Modulo bias yok. Test: `FirstPossessionIsDecidedByASeededSingleBitDraw`. |
+| D33 | Simulator tek maç, **argümansız**, fixture C# kodu | Kullanıcı onayı | 09 M2 "console tek maç". `ImmutableArray` JSON serileştirme riski M2'de ölçeklenmez. |
+| D34 | M2'de tactics/pace `MatchSetup`'e **eklenmedi** — *D30 düzeltmesi* | Uygulama kararı, kullanıcı bilgilendirildi | M4'te tactics'in davranışı olacak. M2'de eklemek sonucu değiştirmeyen ölü veri olurdu. 05 §3 etkisiz mekanizmaların gizlenmesini yasaklıyor. **M2 `MatchSetup`'a hiç dokunmadı.** |
+| D35 | Aksiyon → (şut türü, beceri attribute'ü) eşlemesi M2'de kilitlendi; beş oyuncu da her aksiyona uygun, pozisyon dışı ceza **yok** | Uygulama kararı | 05 §5 seçim fonksiyonunun M2 planında kilitlenmesini şart koşar. 02 §5 gizli ceza uydurulmamasını ister. Ağırlık = attribute + 1, toplam sıfır olamaz. |
+| D36 | Motor çekirdeği `MatchSimulation` olarak adlandırıldı | Uygulama kararı (zorunlu) | Test namespace'i `DreamTeam.MatchEngine.Tests` iken `MatchEngine` identifier'ı namespace'e çözülüyor (CS0118 derleme hatası). 03'te "runner" ayrı kavram olarak ayrılmış durumda. |
+| D37 | Event sözleşmesi: tek zarf + `Type` ayırıcı + türüne özgü payload; `ActionCompleted` türü eklendi | Uygulama kararı | 07 §1'in gerçek zarf yapısı. `ActionCompleted` şıtsız biten aksiyonu temsil eder; onsuz saat ilerlemesi event akışında görünmez kalıyor ve motorun "ilerleme yok" güvenlik ağına takılıyordu. |
+| D38 | `Create` doğrulanmış setup ister ve program hatasında `InvalidOperationException` atar; `Simulate` doğrular, `Aborted` sonuç döner | Uygulama kararı | D26 korunur: kullanıcı girdisinin reddi `MatchSetupValidationResult` ile bildirilir, istisnayla değil. Geçersiz setup'tan `TeamMatchState` kurulamayacağı için "Aborted state" yerine bu ayrım seçildi. |
+| D39 | `ConfigHash` = sabit sıralı alanlardan üretilen metnin SHA-256'sı (16 hex); JSON canonicalization yok | Uygulama kararı | 03'te istenen setup digest böyle üretilir; 08 §4 byte equality beklemez ama aynı config aynı hash vermelidir. Test: `EveryMeaningfulConfigFieldIsCoveredByTheHash`. |
+
+### M2'de bulunan ve düzeltilen gerçek kod hataları
+
+| Hata | Belirti | Düzeltme | Regresyon testi |
+|---|---|---|---|
+| `StartPossession` hücum saatini sıfırlamıyordu | İlk hücumu tüketen saat sonraki her hücuma miras kalıyordu: 3 şut denemesi, 349 turnover, 0-5 skor | Yeni hücum 24 s ile başlıyor (06 §6) | `ShotClockIsResetForEveryNewPossession` |
+| Takım puanı projector'da iki kez ekleniyordu | Box score 194, gerçek skor 97 | `team.Points` tek yerde artırılıyor | `BoxScoreScoreAgreesWithTheEngineScore` |
+| İsabetli şutlarda `3PA` sayılmıyordu | "3P 4-0" gibi imkânsız satırlar | İki sayacın birlikte yürütülmesi | `ShotCountersAreInternallyConsistent` |
+| `MatchClock.BeginPeriod` toplam süreyi sıfırliyordu | Rapor 2.880 s yerine 720 s gösteriyordu | `BeginPeriod` örnek metoduna çevrildi, elapsed korunuyor | `EngineGameClockIsMonotonicAndEndsAtZero` |
+| Şutla sonuçlanmayan aksiyon event üretmiyordu | Motor "ilerleme yok" güvenlik ağıyla abort oldu | `ActionCompleted` event'i eklendi | `EveryProducedEventIsObservable` |

@@ -1,12 +1,26 @@
 # M2 — Dar Possession Vertical Slice: Uygulama Planı
 
-> **Durum:** Onay bekliyor. Bu plan 27 Eylül 2026'da hazırlandı. Uygulama kodu yazılmadı.
+> **Durum:** Kullanıcı tarafından 27 Eylül 2026'da onaylandı **ve uygulandı**. Kabul
+> kriterleri gerçek koşumla doğrulandı: **121/121 test**, Release ve Debug.
+> Kanıt: `docs/11_PROJECT_STATUS.md`.
 >
 > **Kapsam:** Possession → action → shot/turnover/rebound çekirdeği, saat, event akışı,
 > box score ve tek maçlık console çıktısı.
 >
 > **Dışında:** Faul, serbest atış, uzatma, out-of-bounds, substitution, timeout,
 > tactics/pace davranışı, enerji, batch/CLI, API, DB, frontend.
+
+## 0b. Uygulama sırasındaki sapmalar
+
+| Sapma | Plandaki | Gerçekleşen | Gerekçe |
+|---|---|---|---|
+| Sınıf adı | `MatchEngine` | `MatchSimulation` | Test namespace'i `DreamTeam.MatchEngine.Tests` olduğu için `MatchEngine` identifier'ı namespace'e çözülüyor (CS0118). 03'te "runner" canlı taraf için ayrılmış; `MatchSimulation` çakışma yaratmaz. Karar: D36. |
+| `Create` sözleşmesi | "validate eder; reddederse Aborted" | Doğrulanmış setup ister, program hatasında `InvalidOperationException` atar. `Simulate` doğrular ve `Aborted` sonuç döner | D26 korunur: kullanıcı girdisinin reddi istisnayla değil `MatchSetupValidationResult` ile bildirilir. Geçersiz setup'la `TeamMatchState` kurmak imkânsız olduğu için "Aborted state" yerine temiz ayrım seçildi. Karar: D38. |
+| Event modeli | Ayrı kayıt tipi başına event | Tek zarf + `Type` ayırıcı + türüne özgü payload | 07 §1'in gerçek sözleşmesi budur ("`type` + `payload`"). Zarflama tek noktada toplanır; zarf alanı eksik event imkânsızlaşır. Karar: D37. |
+| Event seti | 11 tür | 12 tür — `ActionCompleted` eklendi | Şutla sonuçlanmayan aksiyon event üretmiyordu; saat ilerliyordu ama akış görünmezdi ve motor "ilerleme yok" güvenlik ağına takılıyordu. 07 §2'nin aksiyon ailesi bu yolu temsil etmeli. Karar: D37. |
+| T15 (diagnostics) | Test yazılacak | **Yazılamadı, yazılmadı** | M2'de diagnostics yüzeyi yok; sahte bir "geçti" işareti konulmadı. Bunun yerine H03'ün gerçek garantisi test edildi: `ManualAdvanceLoopMatchesSimulate`. |
+| Rapor çıktısı | box score | + ilk 20 event'in akış denetimi | Tanı sırasında iki gerçek hata ancak böyle görünür oldu. Kalıcı faydası var. |
+| Aksiyon süresi | belirsiz | `SetupActionMs` 8.000, `ShotFlightMs` 1.500 | 24.000 ms'lik hücum saatiyle 3 aksiyona sığar; ihlal yolu erişilebilir kalır. Kalibre değil. |
 
 ## 0. Bu oturumda kilitlenen kararlar
 
@@ -16,6 +30,11 @@
 | D32 | Periyot açılışı: **seeded RNG 1-bit çekilişi** (`NextUInt64() & 1`). Modulo bias yok | 06 §4 "home/away bias yaratmayacak deterministic/seeded yöntem". 08'in mirror deneyi bunu gerektirir. |
 | D33 | Simulator: **tek maç, argümansız**, sabit kurgusal fixture, sonuç + box score yazdırır | 09 M2 "console tek maç". CLI bayrakları/batch/export M6'da; erken tasarlanırsa iki kez yapılır. |
 | D34 | M2'de **tactics/pace `MatchSetup`'e eklenmez** — *D30 düzeltmesi* | M4'te tactics'in davranışı olacak. M2'de eklemek sonucu değiştirmeyen ölü veri olurdu ve "taktik etkili" yanılgısı üretirdi. 05, etkisiz mekanizmaların gizlenmesini yasaklıyor. |
+| D35 | Aksiyon → (şut türü, beceri attribute'ü) eşlemesi kilitlendi; beş oyuncu da her aksiyona uygun | 05 §5, seçim fonksiyonunun M2 planında kilitlenmesini istiyor. Pozisyon dışı oynatma veya uyumsuzluk cezası **yok** — 02 §5 gizli ceza uydurulmamasını ister. Ağırlık = ilgili attribute + 1; toplam sıfır olamaz. |
+| D36 | Motor çekirdeği `MatchSimulation` olarak adlandırıldı | Namespace çakışması (bkz. sapmalar). |
+| D37 | Event sözleşmesi: tek zarf + `Type` + türüne özgü payload; `ActionCompleted` türü eklendi | 07 §1'in gerçek zarf yapısı ve akış görünürlüğü. |
+| D38 | `Create` doğrulanmış setup ister ve program hatasında istisna atar; `Simulate` doğrular ve `Aborted` döner | D26'nın korunması + kurulamayacak state'ten kaçınma. |
+| D39 | `ConfigHash` = sabit sıralı alanlardan üretilen metnin SHA-256'sı (16 hex). JSON canonicalization yok | 03'te istenen setup digest riski böyle kapanır; 08 §4 byte equality beklemez, ama aynı config aynı hash'i vermelidir. |
 
 ### D30 düzeltmesi
 
@@ -244,19 +263,38 @@ uygulamak doğru seçimdir.
 T03 (OVR etkisiz) M2'de **anlamsızdır**: OVR M2'de hiç yok. M4'te gösterim amaçlı
 OVR eklendiğinde gerçek anlamda test edilecek; M2'de sahte bir "geçti" işareti konmayacak.
 
-## 7. Kabul kriterleri
+## 7. Kabul kriterleri — doğrulandı
 
-| Kriter | Nasıl doğrulanır |
-|---|---|
-| Temiz build | `dotnet build DreamTeam.slnx -c Release` → 0 uyarı, 0 hata |
-| Tüm testler geçti | `dotnet test DreamTeam.slnx -c Release` → yeşil, M1'in 42 testi dahil |
-| T01/T04/T05/T15 dar kapsamda | Yukarıdaki tablo |
-| Skor korunumu | `EachScoringEventAddsPointsExactlyOnce` + `BoxScoreInvariantsHold` |
-| Saat ilerliyor | `ClockAdvancesMonotonically` |
-| Console tek maç üretir | `dotnet run --project src/DreamTeam.Simulator -c Release` |
-| Motor saf C# | `dotnet list package` → MatchEngine ve Simulator'da paket yok |
-| M1'e dokunulmadı | `git diff --stat f6aba1f..HEAD -- src/DreamTeam.Domain src/DreamTeam.MatchEngine/Randomness src/DreamTeam.MatchEngine/Core/MatchSetup.cs` boş; `SetupValidationTests` değişmedi |
-| Eksiklik bildirimi | Console çıktısı ve `11_PROJECT_STATUS` "foul/FT/OT yok" diye açıkça belirtir |
+| Kriter | Sonuç | Kanıt |
+|---|---|---|
+| Temiz build | **Geçti** | `dotnet build -c Release` → 0 uyarı, 0 hata |
+| Tüm testler geçti | **Geçti** | Release **121/121**, Debug **121/121** (M1'in 42 testi dahil) |
+| T01 aynı event akışı | **Geçti** | `SameSetupAndSeedProduceAnIdenticalEventStream` |
+| T01b console bayt bayt aynı | **Geçti** | İki `dotnet run` → SHA256 `714F344F…403D3` her ikisinde |
+| T02 kadro sırası etkisiz | **Geçti** | `RosterInputOrderDoesNotChangeTheOutcome` |
+| T04 şut/skor muhasebesi | **Geçti** | `MadeShotAwardsItsTypePointsExactlyOnce`, `EveryShotAttemptIsSettledByExactlyOneMadeOrMissed`, `ShotAttemptAloneNeverCountsAsAFieldGoalAttempt` |
+| T05 possession kimliği | **Geçti** | `OffensiveReboundKeepsPossessionIdentity`, `DefensiveReboundStartsANewPossession` |
+| T15 diagnostics | **Uygulanamaz** | M2'de diagnostics yüzeyi yok. Sahte test yazılmadı. Yerine `ManualAdvanceLoopMatchesSimulate` |
+| Skor korunumu | **Geçti** | `ScoreEqualsTheSumOfScoringEventPoints`, `BoxScoreScoreAgreesWithTheEngineScore` |
+| Saat ilerliyor | **Geçti** | `EngineGameClockIsMonotonicAndEndsAtZero`, `EventClocksNeverRunBackwards` |
+| Sonlanma | **Geçti** | `MatchCompletesAfterTheConfiguredPeriodCount`, `EngineTerminatesForEveryTestedSeed` |
+| Guard → Aborted, skor uydurulmuyor | **Geçti** | `GuardAbortsTheMatchWithoutFalsifyingTheScore` |
+| Eşitlikte kazanan seçilmiyor | **Geçti** | `NoOvertimeIsInventedForATiedMatch` |
+| Box score invariant'ları | **Geçti** | `BoxScoreInvariantTests` (7 seed) |
+| Motor saf C# | **Geçti** | `dotnet list package`: MatchEngine ve Simulator'da **sıfır paket**; `new Random`/`DateTime`/`Guid.NewGuid`/`Console`/`ILogger`/`File` üretim kodunda yok |
+| Console tek maç üretir | **Geçti** | `dotnet run --project src/DreamTeam.Simulator -c Release` → Completed, 4 periyot, 2880.0 s |
+| M1'e dokunulmadı | **Geçti** | `git diff --stat` — M1 dosyalarında değişiklik yok |
+
+### Gözlemlenen ama kalibre edilmemiş sonuçlar
+
+Bu maç **kanıt değil, teşhis aracıdır**. Sayılar tek seed'li tek maçtan gelir:
+
+- Skor 97–85, 209 possession, 27–27 turnover, FG 44/92 ve 41/95.
+- Üçlük: 9/18 ve 3/18. Toplam 12/36 = %33 — hedef aralığın içinde, ama iki taraf
+  arasındaki 9–3 farkı **küçük örneklem gürültüsüdür**, denge kanıtı değildir.
+- Savunma çözümü olmadığı için 97 penta yüksek; bu beklenen ve M3/M4'te düzelecek.
+
+Kalibrasyon, 10K/100K deneyleriyle M6'nın işidir.
 
 ## 8. Uygulama adımları
 
@@ -286,17 +324,37 @@ OVR eklendiğinde gerçek anlamda test edilecek; M2'de sahte bir "geçti" işare
 
 ## 10. Riskler
 
-| Risk | Etki | Azaltma |
+| Risk | Durum | Azaltma / kalan iş |
 |---|---|---|
-| M2 sonuçları istatistiksel olarak anlamsız | Yanlış "motor çalışıyor" izlenimi | Console çıktısı ve durum belgesi kalibrasyon yapılmadığını açıkça yazar |
-| Dört sonuç + sonlanma = eksik kural seti | M3 kuralları eklenince event şeması değişir | `SchemaVersion` baştan konur; M3'te artış normaldir |
-| `Advance` imzası M5'te değişecek | API kırılması | Şimdiden kayıtlı; M5 genişletmesi planlı değişiklik |
-| Config katsayıları kalibre değil | Denge iddiası riski | `Baseline` üzerinde "kalibre edilmemiş" etiketi; M6'da ölçüm |
-| Action süreleri keyfi | Saat/sonlanma davranışı şüpheli | Yapısal testler (monotonluk, guard) sayısal değeri değil yapıyı doğrular |
-| `Sequence` yeniden kullanılırsa box score bozulur | Çift muhasebe | `SequenceIsUniqueAndContiguous` testi |
+| M2 sonuçları istatistiksel olarak anlamsız | **Açık, kabul edildi** | Console çıktısı ve durum belgesi kalibrasyon yapılmadığını açıkça yazar |
+| Dört sonuç + sonlanma = eksik kural seti | **Açık, kabul edildi** | `SchemaVersion` baştan konur; M3'te artış normaldir |
+| `Advance` imzası M5'te değişecek | Kayıtlı | Şimdiden belgelendi; M5 genişletmesi planlı değişiklik |
+| Config katsayıları kalibre değil | **Açık** | `Baseline` "kalibre edilmemiş" etiketi taşır; ölçüm M6'da |
+| Action süreleri keyfi | Yapısal testlerle çevrildi | Monotonluk, guard ve sonlanma testleri sayısal değeri değil yapıyı doğrular |
+| `Sequence` yeniden kullanılırsa box score bozulur | Kapatıldı | `SequenceStartsAtOneAndHasNoGaps` |
+| **Bulunan gerçek hata 1:** `StartPossession` hücum saatini sıfırlamıyordu. İlk hücumu tüketen saat sonraki her hücumu anında ihlal ettiriyordu (3 şut denemesi / 349 turnover) | **Kapatıldı** | `ShotClockIsResetForEveryNewPossession` regresyon testi: ihlal payı < %35 ve şut denemesi > 100 |
+| **Bulunan gerçek hata 2:** Takım puanı projector'da iki kez ekleniyordu (kutu 194, gerçek skor 97) | **Kapatıldı** | `BoxScoreScoreAgreesWithTheEngineScore` |
+| **Bulunan gerçek hata 3:** İsabetli şutlarda `3PA` sayılmıyordu; "3P 4-0" gibi imkânsız satırlar oluşuyordu | **Kapatıldı** | `ShotCountersAreInternallyConsistent` |
+| **Bulunan gerçek hata 4:** `MatchClock.BeginPeriod` toplam oynanan süreyi sıfırlıyordu (rapor 2880 s yerine 720 s gösteriyordu) | **Kapatıldı** | `EngineGameClockIsMonotonicAndEndsAtZero`, `BeginPeriodResetsBothClocksButPreservesTotalElapsed` |
+| **Bulunan gerçek hata 5:** Şutla sonuçlanmayan aksiyon event üretmiyordu; saat ilerliyordu ama akış görünmezdi | **Kapatıldı** | `ActionCompleted` event'i eklendi; `EveryProducedEventIsObservable` |
+| `MatchResult` tüm event'leri bellekte tutuyor | **Açık** | 08 §8 100K deneylerde event biriktirilmemesini ister; bellek sınırlı özet kipi M6'nın işi |
+| `ImmutableArray<T>` JSON serileştirmesi | **Açık** | M6 fixture okuma/yazmasında erken test edilmeli |
+| T15 diagnostics testi yazılamadı | **Açık, dürüstçe raporlandı** | M2'de diagnostics yüzeyi yok; M6'da eklenince test edilebilir |
 
 ## 11. Sonraki milestone bağlantısı
 
 M3 kuralları (foul/FT/bonus/horn/uzatma/foul-out) bu çekirdeğin üstüne biner:
-`Advance` aynı kalır, `MatchPhase` genişler, event tipleri çoğalır, `SchemaVersion` artar.
-M2'nin `MatchState`, `MatchClock` ve `Advance` sözleşmeleri M3 tarafından değiştirilmez.
+`Advance` aynı kalır, `MatchPhase` genişler (`FreeThrows` ve `ShotPending` eklenir),
+event tipleri çoğalır, `SchemaVersion` artar. M2'nin `MatchState`, `MatchClock`,
+`MatchSetup` ve `Advance` sözleşmeleri M3 tarafından **değiştirilmez**.
+
+M3'te açılması gereken kararlar: Q07 (bonus, foul-out, az oyuncu terminal policy),
+06 §6'daki shot-clock reset tablosunun kalan satırları, horn/release tie-break'ı.
+
+M4'e kalan: tactics/pace `MatchSetup`'e eklenir (D34), composite rating'ler,
+savunma çözümü, enerji/stamina, `GameForm` (Q10).
+
+M5'e kalan: `Advance` imzası manager command listesiyle genişler.
+
+M6'ya kalan: batch CLI, JSON/CSV export, bellek sınırlı özet kipi, 10K/100K deneyleri,
+denge kalibrasyonu, mirror/simetri deneyi.
