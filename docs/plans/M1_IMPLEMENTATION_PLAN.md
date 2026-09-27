@@ -404,4 +404,4 @@ events, `BoxScoreProjector` ve console giriş noktası.
 | Setup digest/hash'i hesaplanmıyor | Açık | M1 kapsamı dışı; 03'te istenen digest M2/M6 config ile birlikte eklenmeli |
 | Cross-platform bit düzeyi eşitlik kanıtlanmadı | Bilinçli erteleme | D23 kapsamı dışında; M6'da ayrıca ölçülecek |
 | `IRandomSource` henüz tüketici yok | Açık | M2'de `MatchEngine` bu arayüzü tüketmeye başlayacak |
-| Git repository yok | Açık | Kullanıcı kararı; kod yazıldı ancak commit atılmadı |
+| Git repository yok | **Kapatıldı (27.09.2026)** | Kullanıcı uzak repo'yu oluşturdu; `main` → `origin/main` ile eşitlendi (`f6aba1f`, `b328fee`, `0ef8f1c`) |
