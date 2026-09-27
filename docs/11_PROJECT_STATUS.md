@@ -7,7 +7,7 @@ Son güncelleme: 27 Eylül 2026.
 - Aşama: Uygulama. **M1 tamamlandı ve doğrulandı.**
 - Aktif milestone: **M1 bitti → sırada M2 (dar possession vertical slice + console tek maç)**.
 - Uygulama yetkisi: **M1 için verildi ve kullanıldı.** M2 için yetki **yok**; M2 başlamadan önce ayrıca onay gerekir.
-- Git: hâlâ **repository değil** (`git status` → "not a git repository"). Kod yazıldı, commit atılmadı. Kullanıcı kararı bekliyor.
+- Git: **`main` branch'i `origin/main` ile eşitlendi.** Uzak: `https://github.com/Sonerbascifci/DreamTeamReborn.git`. İki commit: `f6aba1f` (M0 devir paketi) ve `b328fee` (M1 kodu). Push sonrası doğrulandı: ahead 0 / behind 0.
 - Monte Carlo: 0 maç. 10K/100K hedefleri M6'ya ait; henüz çalıştırılmadı.
 - DB / runtime / hosting: seçilmedi. M1 bunlara ihtiyaç duymadı.
 
@@ -73,12 +73,12 @@ Son güncelleme: 27 Eylül 2026.
 
 ## Açık riskler
 
-1. **Git repository yok.** Değişiklikler izlenebilir değil; commit geçmişi oluşmadı. Kullanıcı kararı gerekiyor.
-2. **Cross-platform bit düzeyi eşitlik kanıtlanmadı.** Garanti kapsamı bilinçli olarak aynı kilitli runtime ile sınırlı (D23). M6'da ayrıca ölçülmeli.
-3. **Setup digest/hash'i henüz hesaplanmıyor.** `EngineIdentity.BalanceConfigHash` şimdilik çağıran tarafdan gelen bir alan; içerik hash'i üreten yok. M2/M6 config ile birlikte eklenmeli.
-4. **`ImmutableArray<T>` JSON serileştirmesi doğrulanmadı.** M6 fixture okuma/yazmasında erken test edilmeli.
-5. **`IRandomSource` henüz tüketici değil.** Arayüz 08'in test double gereksinimi için var; M2'de `MatchEngine` tüketecek.
-6. **Oyun RNG'si henüz hiçbir şeyi beslemiyor.** Motor henüz maç üretmiyor; determinism kanıtı RNG çekirdeği düzeyinde geçerli, maç düzeyinde değil.
+1. **Cross-platform bit düzeyi eşitlik kanıtlanmadı.** Garanti kapsamı bilinçli olarak aynı kilitli runtime ile sınırlı (D23). M6'da ayrıca ölçülmeli.
+2. **Setup digest/hash'i henüz hesaplanmıyor.** `EngineIdentity.BalanceConfigHash` şimdilik çağıran tarafdan gelen bir alan; içerik hash'i üreten yok. M2/M6 config ile birlikte eklenmeli.
+3. **`ImmutableArray<T>` JSON serileştirmesi doğrulanmadı.** M6 fixture okuma/yazmasında erken test edilmeli.
+4. **`IRandomSource` henüz tüketici değil.** Arayüz 08'in test double gereksinimi için var; M2'de `MatchEngine` tüketecek.
+5. **Oyun RNG'si henüz hiçbir şeyi beslemiyor.** Motor henüz maç üretmiyor; determinism kanıtı RNG çekirdeği düzeyinde geçerli, maç düzeyinde değil.
+6. **CI tanımlı değil.** Testler yalnızca yerelde koştu. GitHub Actions ile otomatik `dotnet test` eklenmedi; istenirse ayrı iş.
 
 ## Sonraki tek uygulanabilir görev
 
