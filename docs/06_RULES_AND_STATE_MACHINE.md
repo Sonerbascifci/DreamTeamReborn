@@ -15,7 +15,9 @@ Basketbol simülasyonu süresi ile live viewer duvar saati hızı ayrı tutulur.
 | Kişisel faul sınırı | 6 | M3; resmî ayrıntı ayrıca doğrulanır |
 | Takım bonusu | Basit profil: periyot içinde 5. sayılan savunma faulünden itibaren 2 FT | M3; NBA'nin tüm istisnaları değildir |
 | Uzatma bonusu | Basit profil: OT sayacı sıfırlanır, 4. sayılan savunma faulünden itibaren 2 FT | M3; ürün profili olarak onaylanır |
-| Timeout | İlk öneri takım başına maçlık 4; OT'ye +1, süre simüle canlı saate eklenmez | M5; NBA timeout kuralı iddiası değildir |
+| Timeout | **Karar (D84, 27.09.2026):** takım başına maçlık **4 tam**, son 2'si **yalnız düzenleme periyodunun son 2 dakikasında**; uzatma başına **+1**. Süre simüle canlı saate eklenmez ve hücum saatini başlatmaz. `TimeoutKind.Short20` tipi de vardır, sayısı **kaynaktan gelmiyor** (D89). **Sapma:** timeout canlı top anında uygulanmaz, yalnız dead-ball sınırında. NBA timeout kuralı iddiası değildir | M5 |
+| Uzatma üst sınırı | **Karar (D79):** en fazla **2 uzatma** (toplam 6 periyot). Sınıra gelindiğinde hâlâ eşitse maç `Aborted` olur; kazanan uydurulmaz, `IsTie` = false | M5 |
+| Clutch | **Karar (D80):** yok. Motor son dakikalarda oyun davranışını değiştirmez | M5 |
 | Devre arası / mola dinlenmesi | Ayrı recovery parametreleri; canlı game time tüketmez | M4/M5 |
 | Beşten az uygun oyuncu | Sessizce 4 kişi oynatma veya foul-out geri alma yok; açık forfeit/abort policy | M3 |
 | İleri kural istisnaları | Teknik/flagrant, challenge, defensive three seconds, backcourt ve jump-ball ayrıntıları dışarıda | M0 onayı |
@@ -108,7 +110,7 @@ M2 dar vertical slice'ı yalnız normal basket/miss/rebound içeriyorsa bunu eng
 
 ## 7. Substitution ve timeout pencereleri
 
-“Her possession bittiğinde değişiklik” kuralı yanlış bir varsayımdır. DREB/steal sonrası oyun canlıdır. Önerilen ilk profil; faul/ihlal sonrası uygun dead-ball, timeout, periyot arası pencerelerini kullanır. Normal basketten sonra otomatik substitution penceresi açılıp açılmayacağı M5'te açıkça seçilir; varsayılan olarak açılmaz.
+“Her possession bittiğinde değişiklik” kuralı yanlış bir varsayımdır. DREB/steal sonrası oyun canlıdır. Önerilen ilk profil; faul/ihlal sonrası uygun dead-ball, timeout, periyot arası pencerelerini kullanır. **Karar (D82, 27.09.2026): normal basketten sonra substitution penceresi AÇILMAZ.** Düdük sonrası dead-ball ve devre arası pencereleri açıktır; DREB/steal sonrası oyun canlı olduğu için pencere yoktur.
 
 Substitution istek kabulünde ve uygulama anında tekrar doğrulanır. Aynı oyuncunun iki istekle sahaya girmesi, foul-out sonrası geri gelmesi ve beşin geçici olarak dört/altı kişi olması engellenir. Çoklu değişiklik bir atomik lineup geçişi olarak uygulanır.
 

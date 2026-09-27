@@ -71,7 +71,7 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | **Çözüldü → D57** |
 | Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | **Çözüldü → D58, D62** |
 | Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | **Kısmen çözüldü → D60 (M4'te kapalı); dağılım/birim M6'ya açık** |
-| Q11 | Timeout hakkı, legal pencereler, late game? | 06/07 taslağı üzerinden netleştir | M5 | Açık |
+| Q11 | Timeout hakkı, legal pencereler, late game? | 06/07 taslağı üzerinden netleştir | M5 | **Çözüldü → D80, D81, D84.** Clutch yok; motor yönetir; 4 tam timeout, son 2'si son 2 dakikada, uzatma +1. **Sapma:** timeout canlı topta uygulanmaz |
 | Q12 | Canlı maç kaç gerçek dakika sürmeli? | Simülasyon hızından bağımsız ürün ayarı | M7 | Açık |
 | Q13 | PostgreSQL/MSSQL, auth ve hosting? | Ekip/ortam ve gerçek gereksinimle seç | M7 | Açık — M1'i engellemedi |
 | Q14 | Oyuncu kopyası/instance ve kadro büyüklüğü? | Engine fixture'ından ürün kuralı çıkarma | M7 | Açık — M1'i engellemedi |
@@ -198,4 +198,50 @@ değildir.
 | D75 | Enerji katsayıları yeniden ölçeklendi: `BaselineDrainPerSecond` 0.0055 → **0.08**, `BaselineRecoveryPerSecond` 0.0042 → **0.012**, `BreakRecoveryPerSecond` 0.02 → **0.04** | Uygulama kararı — **kalibre değil** | İlk değerler 48 dakikada ~3 puan kaybettiriyordu, yani eğri hiç görünmüyordu. Hedef: Stamina 78'de tam maç başına ~50 puan. |
 | D76 | **`TeamMatchState.Bench` türetilmiş**; ayrı liste M5'te | Uygulama kararı | İki kaynak (ayrı liste + "sahada olmayan") riskini önler. 04 §28'deki ayrı alan M5'in substitution işidir. |
 | D77 | `MatchResult.PlayerEnergy` ve `HomeOverall`/`AwayOverall` eklendi | Uygulama kararı | 08 §88 "oyuncu dakika/enerji dağılımı" ister. OVR motor tarafından **raporlanır ama hiç okunmaz** (T03). |
-| D78 | **Uzatma üst sınırı tanımsız bırakıldı.** Puan atılamayan fixture'da 0-0 beraberlik uzatmayı sürdürüyor; motor yalnız eylem guard'ı ile kesiyor | **Açık — karar verilmedi** | 08 T10 "guard → Aborted" dediği için mevcut davranış spec'e uygun. Ama 521 periyot üretmek bir kalite sorunudur ve **ürün kararıdır**: uzatma sayısı sınırlansın mı, sınırdan sonra `Aborted` mi yoksa beraberlik mi kabul mü? M5'e girmeden yanıtlanmalı. Kayda geçti, uydurulmadı. |
+| D78 | **Uzatma üst sınırı tanımsız bırakıldı.** Puan atılamayan fixture'da 0-0 beraberlik uzatmayı sürdürüyor; motor yalnız eylem guard'ı ile kesiyor | **Açık — karar verilmedi** | 08 T10 "guard → Aborted" dediği için mevcut davranış spec'e uygun. Ama 521 periyot üretmek bir kalite sorunudur ve **ürün kararıdır**: uzatma sayısı sınırlansın mı, sınırdan sonra `Aborted` mi yoksa beraberlik mi kabul mü? M5'e girmeden yanıtlanmalı. Kayda geçti, uydurulmadı. **M5 planlama oturumunda D79 ile kapandı.** |
+
+## 12. M5 planlama kararları — 27 Eylül 2026
+
+Kullanıcıya sorulan dört ürün sorusunun yanıtları ve motor tarafında alınan
+kararlar. **Kod yazılmadı**; `docs/plans/M5_IMPLEMENTATION_PLAN.md` yazıldı.
+
+| ID | Karar | Durum | Gerekçe |
+|---|---|---|---|
+| **D79** | **Uzatma üst sınırı 2** (toplam en fazla 6 periyot). Sınıra gelindiğinde hâlâ eşitse maç **`Aborted`**, kazanan uydurulmaz. `RulesProfile.MaxOvertimePeriods`, `ConfigHash`'e yazılır | Kullanıcı kararı — **D78 kapandı** | 0-0 beraberlikte 521 periyot üretmek kalite ve hız riski. 08 T10 "guard → Aborted" yönüne uygun kalır, ama guard'a kadar 521 periyot beklemek yerine açık bir sınır var. `IsTie = false` kalır (06 §8: yarım kalan maç beraberlik sayılmaz). |
+| **D80** | **Clutch yok.** Motor son dakikalarda oyun davranışını değiştirmez | Kullanıcı kararı | 05 §'te böyle bir kural yok; uydurmamak doğru cevap. Clutch bir UI/denge konsepti olarak kalır. Timeout sayısı/penceresi ayrı konu (D84). |
+| **D81** | **AI fallback: motor yönetir.** Taktik/tempo/substitution kararlarını motor verir; yönetici istediği anda müdahale eder, "devraldım" modu yok | Kullanıcı kararı | 07 §8 bu politikayı açıkça ürün kararına bırakmıştı. M6 toplu koşu da aynı yolu kullanır. |
+| **D82** | **Substitution penceresi: yalnız düdük sonrası dead-ball ve devre arası.** Normal basket sonrası pencere **açılmaz** | Kullanıcı kararı — **06 §7 kapandı** | 06 §7 bu kararı açıkça M5'e bırakmış ve varsayılanı "açılmaz" demişti. 06 §7'deki "DREB/steal sonrası oyun canlıdır" kuralı da korunur. |
+| **D83** | **20 saniyelik timeout'un tipi motorun bilir, süresi M7'nin.** `TimeoutKind.Full` ve `TimeoutKind.Short20` ikisi de sayaçtan düşer; 20 saniyenin duvar saati süresi canlı runner'da yaşar | Kullanıcı kararı | Motor duvar saati tutmaz (03). 20 saniye bir gerçek-zaman kavramıdır; motorda karşılığı yoktur ve uydurulmamalıdır. |
+| **D84** | **Timeout: takım başına maçlık 4 tam, son 2'si yalnız düzenleme periyodunun son 2 dakikasında; uzatma başına +1.** Canlı saati tüketmez, hücum saatini başlatmaz. **Uygulama yalnız dead-ball sınırında** | Kullanıcı kararı — **Q11 kapandı** | 06 §18'in "ilk öneri 4" değerini kullanıcı onayladı. **Bilinen sapma:** NBA'da timeout son iki dakikada canlı top anında çağrılabilir; M5'te bu yapılmaz çünkü canlı possession'ı kesmek yeni bir `PossessionEndReason.Timeout` ve possession sayacı kayması demektir. 06 §23 "NBA profili etiketi bu ayrıntıları içermez" diyor. |
+| **D85** | Substitution komutu **çıkan ve giren oyuncuyu açıkça adlandırır**; motor kimi çıkaracağını tahmin etmez | Uygulama kararı — 07 §5 | 07 §5 `Substitute` komutunun payload taşıdığını söylüyor. Otomatik çıkarma zaten foul-out yolunda var (M3, `EligibilityPolicy`). |
+| **D86** | Bekleyen komut sırası **`AcceptedOrder` ile FIFO**; aynı tip taktik komutlarında last-write-wins doğal olarak çıkar; ikinci substitution ilk uygulanmış lineup'e karşı **yeniden** doğrulanır | Uygulama kararı — 07 §6 | 07 §6 "FIFO veya last-write-wins seçilir ve replay kaydına yansır; sessizce keyfî seçme" diyor. `AcceptedOrder` istemci tarafından belirlenemez (07 §5). |
+| **D87** | **M5, `MatchStateFingerprint` yardımcısı ekler ve tüm durum karşılaştırmalarını onunla yapar.** `Assert.Equal(state, restored)` **yazılmayacak** | Uygulama kararı — **ölçülmüş hata** | `ImmutableArray<T>.Equals` **referans eşitliğidir**; bu yüzden `record` üretici eşitliği `Team`, `TeamMatchSetup`, `MatchSetup` ve `MatchState` için bozuktur. Bu oturumda ölçüldü: aynı id + aynı roster içeren iki ayrı `Team` örneğinde `Equals` = **False**; `ImmutableArray` içermeyen `Player`'da = **True**. `Team` JSON round-trip bayt aynı ama `Equals` yine `False`. T16 ("restore sonrası aynı devam") bu yüzden `Assert.Equal` ile test **edilemez**: hem yanlış negatif hem de yanlış pozitif verir. **M7'de kalıcı katmanda çözülmeli.** |
+| **D88** | `System.Text.Json` **`net10.0` sınıf kütüphanesinde sıfır NuGet paketiyle** kullanılabilir; `ImmutableArray<T>`, `required`+`init` record round-trip'i çalışır. Enum'lar varsayılan **sayısal** serileştirilir | Ölçüm, karar değil | Bu oturumda geçici bir prob dosyası yazılıp koşturuldu ve silindi. Sonuç: bağımlılık kısıtı bozulmadan replay mümkün. Enum için M5 `JsonStringEnumConverter` (isim tabanlı) kullanacak; aksi halde enum ordering'i bir kez değişse kayıtlı snapshot **sessizce** bozulur. |
+| **D89** | `RulesProfile.ShortTimeoutsPerTeam = 3` | **Açık — kaynaktan gelmiyor, onay bekliyor** | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama bu bir sayı uydurmadır. 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısının parçası; `ConfigHash`'e girdiği için kolayca değiştirilebilir. |
+
+### Bu oturumda ölçülen (tahmin edilmeyen) bulgular
+
+| Ölçüm | Sonuç |
+|---|---|
+| `System.Text.Json` sıfır paketle | **Çalışıyor** |
+| `ImmutableArray<T>` JSON round-trip | **Çalışıyor** (`byte[]` için hex converter gerekli) |
+| `required` + `init` record round-trip | **Çalışıyor** |
+| Aynı id + aynı roster, ayrı örnek → `Team.Equals` | **False** (D87) |
+| `ImmutableArray` içermeyen `Player.Equals` | **True** (D87'nin kökeni) |
+| `TeamMatchSetup.Equals` | **False** (D87) |
+| `Team` JSON round-trip | **Bayt aynı**, `Equals` = **False** |
+| `IRandomSource.GetState`/`SetState` | **Kesin round-trip**, state = 8 bayt → replay için RNG'de sıfır yeni iş |
+| Enum JSON | **Sayısal** (`InsidePost` → `3`) |
+
+### Bu oturumda kapanan açık sorular
+
+- **Q11** (timeout hakkı, legal pencereler, late game) → **D80 + D81 + D84**.
+- **06 §7'nin M5'e bıraktığı substitution penceresi kararı** → **D82**.
+- **D78** (uzatma üst sınırı) → **D79**.
+
+### Hâlâ açık
+
+- **D89** — `ShortTimeoutsPerTeam` sayısı (kaynaksız yer tutucu).
+- **Q10** — GameForm dağılımı/birimi (M6).
+- **Q12** — canlı maç kaç gerçek dakika sürmeli (M7).
+- **Q13–Q18** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri, sezon referansı.
