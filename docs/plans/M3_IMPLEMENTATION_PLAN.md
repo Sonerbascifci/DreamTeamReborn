@@ -1,6 +1,7 @@
 # M3 — Kural Bütünlüğü: Uygulama Planı
 
-> **Durum:** Onay bekliyor. Bu plan 27 Eylül 2026'da hazırlandı. Uygulama kodu yazılmadı.
+> **Durum:** Uygulandı ve doğrulandı (27 Eylül 2026). Aşağıdaki kabul tablosu
+> gerçek koşu sonuçlarıyla dolduruldu. Sapmalar §12'de kayıtlı.
 >
 > **Kapsam:** Faul, bonus, serbest atış, blok, hücum saati reset politikası, periyot/uzatma
 > kontrolü, foul-out ve yedekleme, terminal politikalar.
@@ -28,6 +29,9 @@ Bu değişiklikler **beyan edilmiş ve gerekçelendirilmiştir**:
 | `MatchResult.PeriodsPlayed` artık uzatmayı da kapsar | 5, 6, 7… periyot | — |
 | `EventSchemaVersion` 1 → **2** | Yeni event türleri | — |
 | Yeni event türleri: `Foul`, `FreeThrowAttempt`, `FreeThrowMade`, `FreeThrowMissed`, `Block` | 07 §2'nin faul/FT ailesi | — |
+| `TeamMatchState`'e `Fouls` (`FoulCounters`) | Kişisel ve periyot faul sayaçları | — |
+| `PossessionEndReason.BonusFreeThrows` | 06 §4 tablosunda bonuslu non-shooting faul satırı **yoktu**; turnover da değil. Sonucu adlandırmak için eklendi | — |
+| `Config`'e `FoulModel`, `FreeThrowModel`, `FoulType` | 06 §1'in faul profili | `ConfigHash` değişir |
 
 **Değişmeyecekler:** `MatchSetup`, `MatchClock` (üç sayacın anlamı), `Advance` imzası,
 `IRandomSource`, `MatchSetupValidator`, `EngineIdentity`. M5'e bırakılan genişletme
@@ -205,7 +209,9 @@ testle sabitler.
 - `PeriodController` periyot süresini verir: 1–4 için 12 dk, 5+ için 5 dk.
 - `PeriodEnded` → `PeriodBreak`. Eşitlik ve son periyot ise `Completed`; değilse
   `PeriodBreak` → sonraki periyot.
-- Uzatmada kişisel faullar ve enerji korunur (06 §119), takım faul sayacı sıfırlanır (D42).
+- Uzatmada kişisel faullar ve enerji korunur (06 §119). Takım faulu bir **periyot
+  sayacıdır**: her periyot başında sıfırlanır. D42'nin "her uzatmada sıfırlanır"
+  şartı bunun alt kümesidir (bkz. §12 sapma 1).
 - Çoklu uzatma: 5, 6, 7… periyot. Eşitlik bozulana kadar devam.
 - `MatchResult.IsTie` yalnız `Completed` ve skorlar eşitse true. M3'te uzatma
   olduğu için pratikte tie nadir; rastgele kazanan **yine** seçilmez.
@@ -218,9 +224,10 @@ public static class EligibilityPolicy
 {
     /// <summary>
     /// Sahada olmayan, faulden çıkmamış oyuncular arasından en uygun yedek.
-    /// "En uygun" = 18 attribute'ün aritmetik ortalaması en yüksek; eşitlikte
-    /// kanonik kadro sırası. Bu bir YER TUTUCUDUR: gerçek rol derinliği ve
-    /// uyum M4'te gelecektir.
+    /// Sıralama: BasketballIQ azalan, Stamina azalan, kanonik kadro sırası.
+    /// Bu bir YER TUTUCUDUR: gerçek rol derinliği ve uyum M4'te gelecektir.
+    /// 18 attribute tablosu M1'in MatchSetupValidator'ında yaşar; burada ikinci
+    /// bir tablo kopyalanmaz (bkz. §12 sapma 2).
     /// </summary>
     public static Player? SelectReplacement(TeamMatchState team);
 }
@@ -267,21 +274,62 @@ M7'de ele alınabilir. 06 §121 gereği bu maçlar win-rate paydasına katılmaz
 **T03 (OVR) hâlâ uygulanamaz** — OVR yok. **T15 (diagnostics) hâlâ uygulanamaz** —
 diagnostics yüzeyi yok. Sahte "geçti" konmayacak.
 
-## 8. Kabul kriterleri
+### 7.1 Yazılan gerçek testler
 
-| Kriter | Nasıl doğrulanır |
-|---|---|
-| Temiz build | `dotnet build -c Release` → 0 uyarı, 0 hata |
-| Tüm testler geçti | `dotnet test -c Release` ve `-c Debug` → yeşil; M1 ve M2 testleri dahil |
-| T04–T11 | Yukarıdaki tablo |
-| FT arası rebound yok | `MissBetweenFreeThrowsProducesNoRebound` |
-| Offensive foul tek turnover | `OffensiveFoulProducesExactlyOneTurnover` |
-| Geçersiz beşliyle oyun sürülmüyor | `NoLegalSubstituteAbortsMatch` |
-| Eşitlik doğru çözülüyor | `TieAfterFourthPeriodStartsOvertime`, `MultipleOvertimesResolveTie` |
-| NaN / sonsuz döngü yok | `ShotClockIsNeverNegative`, `EngineTerminatesForEverySeed…` |
-| Motor saf C# | `dotnet list package` → MatchEngine'da sıfır paket |
-| Beyan edilen sözleşme değişiklikleri | `git diff` gözden geçirilir; `MatchSetup`/`MatchClock`/`MatchSetupValidator` **dokunulmamış** olur |
-| Eksiklik bildirimi | Console çıktısı kalan kural boşluklarını yazar |
+Plan adları ile dosya/test adları birebir eşleşmedi. Aşağıdaki tablo **yazılmış
+ve koşmuş** testleri gösterir.
+
+| Plan ID | Yazılan test | Dosya |
+|---|---|---|
+| T04c, T04d | `BlockedShotIsAMissWithOneFieldGoalAttemptAndNoScore` | `M3RuleTests` |
+| T04 | `BlockIsAttributedToADefenderOnCourt`, `BlockAndMissShareTheSameShotId` | `M3RuleTests` |
+| T06a, T06b | `RimContactOffensiveReboundResetsToFourteenSeconds`, `AirballOffensiveReboundKeepsRemainingTime` | `M3RuleTests` |
+| T06c | `DefensiveReboundAlwaysStartsWithAFullShotClock` | `M3RuleTests` |
+| T07a | `AndOneAwardsExactlyOneFreeThrow` | `M3RuleTests` |
+| T07b | `MissedShootingFoulAwardsTwoOrThreeFreeThrowsWithoutFieldGoalAttempt` | `M3RuleTests` |
+| T07c | `MissedThreePointFoulAwardsThreeFreeThrowsAndTwoPointFoulAwardsTwo` | `M3OvertimeAndEdgeTests` |
+| T07d | `MissBetweenFreeThrowsProducesNoRebound` | `M3RuleTests` |
+| T07e | `OnlyTheLiveFinalFreeThrowCanProduceARebound` | `M3RuleTests` |
+| T07 | `EveryFreeThrowAttemptIsSettledByExactlyOneResult`, `FreeThrowIndicesAreContiguousWithinASeries`, `FreeThrowStatisticsStayConsistent` | `M3RuleTests` |
+| T08a | `BonusStartsOnFifthTeamFoul` | `M3RuleTests` |
+| T08b | `TeamFoulCounterResetsAtEveryPeriodStart` | `M3OvertimeAndEdgeTests` |
+| T08c | `OffensiveFoulProducesExactlyOneTurnoverAndNoFreeThrow`, `OffensiveFoulDoesNotTriggerBonusFreeThrows` | `M3RuleTests` |
+| T08d, T08e | `SixthPersonalFoulRemovesPlayerAndTriggersReplacement`, `OnCourtAlwaysHasExactlyFiveLegalPlayers`, `FoulOutPlayerIsRemovedFromTheCourtImmediately` | `M3RuleTests` |
+| T09a | `ShotIsNeverReleasedWhenTheShotClockHasAlreadyExpired` | `M3OvertimeAndEdgeTests` |
+| T09b | `ShotReleasedAtTheHornIsSettledAndScoredIfMade`, `MadeShotAtTheHornContributesToTheFinalScore` | `M3OvertimeAndEdgeTests` |
+| T10a | `TieIsResolvedByOvertimeNotByARandomWinner` | `MatchTerminationTests` |
+| T10b | `OvertimeIsPlayedUntilTheScoreIsNoLongerTied` | `M3OvertimeAndEdgeTests` |
+| T10c | `OvertimeTeamFoulCounterRestartsInEachOvertime` | `M3OvertimeAndEdgeTests` |
+| T10d | `OvertimePeriodsAreShorterAndFlagged`, `GuardAbortsTheMatchWithoutFalsifyingTheScore` | `MatchTerminationTests` |
+| T11a | `NoLegalSubstituteAbortsMatchWithExplicitReason` | `M3RuleTests` |
+| Skor eşitliği | `ScoreEqualsTwoPointersPlusThreePointersPlusFreeThrows`, `FreeThrowCountersAreInternallyConsistent` | `BoxScoreInvariantTests` |
+| Tek settlement | `EveryShotAttemptIsSettledByExactlyOneMadeOrMissed` | `DeterminismTests` (M2) |
+| FT arası rebound yok | `MissBetweenFreeThrowsProducesNoRebound` | `M3RuleTests` |
+| Negatif saat yok | `ShotClockIsNeverNegative` | `M3RuleTests` |
+| Uzatmada sonlanma | `EngineTerminatesForEverySeedEvenWhenOvertimeIsReached` | `M3OvertimeAndEdgeTests` |
+| M2 çekirdeği | M1 + M2 testlerinin tamamı değişmeden yeşil | — |
+| Saf fonksiyonlar | `FreeThrowCountFollowsTheDocumentedProfile`, `DefensiveFoulNeverIncreasesTheShotClock`, `OffensiveReboundResetDependsOnRimContact`, `PeriodControllerDecidesOvertimeAndFoulReset` | `M3RuleTests` |
+
+## 8. Kabul kriterleri — gerçek koşu sonuçları
+
+| Kriter | Nasıl doğrulandı | Sonuç |
+|---|---|---|
+| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | **0 uyarı, 0 hata** |
+| Tüm testler geçti | `dotnet test -c Release` | **158/158** |
+| Tüm testler geçti (Debug) | `dotnet test -c Debug` | **158/158** |
+| Motor saf C# | `dotnet list package` (MatchEngine, Simulator) | **Sıfır paket** |
+| Determinism | Simulator çıktısının SHA256'ı, iki ayrı koşu | `BC7DF62F7406A57E7BF7059D9C102B940D513AC82FC3D01F45E9B0AE7C037A34` — **iki koşuda aynı** |
+| Eksiklik bildirimi | Console çıktısı kural boşluklarını yazar | Mevcut |
+| `MatchSetup`/`MatchClock`/`MatchSetupValidator` dokunulmamış | `git diff <M2 commit> HEAD` | Aşağıda doğrulandı |
+
+### Gözlenen tek maç (seed 20260927, tek maç, **denge kanıtı değildir**)
+
+`104-100`, 212 possession, FG 42-90 / 46-87, 3P 7-13 / 2-10, FT 13-17 / 6-6,
+PF 8 / 12, BLK 4 / 6, TOV 24 / 26, `ConfigHash = b87d9443ec56fb3b`.
+
+Skor yüksek; savunma çözümü henüz yok (M4). Denge ölçümü M6'nın işidir.
+
+## 9. Bilinçli olarak yapılmayacaklar
 
 ## 9. Bilinçli olarak yapılmayacaklar
 
@@ -314,3 +362,45 @@ composite rating'ler, savunma çözümü, enerji/stamina, `GameForm` (Q10).
 
 **M5** (müdahale ve replay): `Advance` imzası manager command listesiyle genişler,
 `PendingShot`/`PendingFrees` serileştirilir, timeout, substitution pencereleri.
+
+## 12. Uygulama sapmaları
+
+Plan ile uygulama arasındaki farklar. Hepsi kayda geçirildi; hiçbiri gizlenmedi.
+
+| # | Sapma | Neden |
+|---|---|---|
+| 1 | **Takım faulu her periyotta sıfırlanır**, yalnız uzatmada değil. Plan §5 "normal periyotta korunur" diyordu. | `TeamFoulsThisPeriod` bir periyot sayacıdır; 4. periyottan devreden sayı 5. periyotta erken bonusa yol açıyordu. NBA periyot içi bonus kuralı da böyledir. D42'nin uzatma şartı alt küme olarak korunur. D46 |
+| 2 | **"En uygun yedek" = BasketballIQ + Stamina**, 18 attribute ortalaması değil. | Ortalama için ikinci bir 18'li tablo kopyalamak gerekirdi (M1 `MatchSetupValidator`'ı değiştirmeden kalınamazdı). İki attribute deterministik, ucuz ve açıkça yer tutucu. M4'te gerçek mantık |
+| 3 | **`PendingShot.FreeThrowCount` yok.** Plan §1'de vardı. | And-one sonucu şutun isabetine bağlıdır; bırakma anında bilinmez. `FoulResolver.FreeThrowCountFor` settlement anında sayar. Yanlış yerde tutmak yanlış sayı üretirdi |
+| 4 | **Hücum saati kontrolü iki daldan da ortak.** Plan §3'te yalnız şut dalındaydı. | `!shotAttempted` dalında kontrol düşünce, şuta dönüşmeyen hücumlarda ihlal hiç kaydedilmiyor ve hücum saat sıfırda sonsuza kadar devam ediyordu. Gerçek motor hatası |
+| 5 | **Foul türü çekilişleri `ShotAttempt`'ten önce.** Plan §3'te sonra. | Hücum faulü düdük bırakmadan çalar; şut denenmez. Önce `ShotAttempt` yayınlanırsa settlement'sız bir şut açılıyor (asılı settlement) ve tek aksiyon iki kez sayılıyordu. Gerçek motor hatası |
+| 6 | **`Foul` event'i `actionId` taşır.** | Tüketici bir faulu ilgili şuta bağlamak için korelasyon gerekiyordu; `PossessionId` tek başına yetersiz (possession içinde birden fazla aksiyon olabilir) |
+| 7 | **Terminal durum kontrolü `ApplyFoul` sonrası zorunlu.** | Foul-out yasal yedek yoksa `Abort` üretiyor; ardından yazılan `PendingShot`/`Turnover` terminal durumu eziyordu. `NullReferenceException` ve "ilerleme yok" abortu. Gerçek motor hatası |
+| 8 | **`ApplyReplacement` beşi yeniden doldurur.** | `Take(OnCourt.Length)` ile yedekleme, her foul-out'ta sahadaki sayıyı azaltıyordu; 5. foul-out'ta `ActionSelector` "sahada oyuncu yok" ile duruyordu. Gerçek motor hatası |
+| 9 | **`DeadBall` fazı hiçbir adım sınırında kalıcı değil.** | Inbound, onu doğuran event'le aynı adımda atomik çözülür. Kalıcı olsaydı event üretmeyen bir adım oluşur ve motorun "ilerleme yok" ağı devreye girerdi |
+| 10 | **M2 testlerinin "ilk beş" invariant'ı "kadro"ya genişletildi.** | M3'te foul-out yedeklemesi oyuncuyu değiştirir; değişmeyen sınır kadrodur. M1/M2 test dosyaları ve test sayıları korundu, yalnız iki testin öncülü netleşti |
+
+### Bulunan ve düzeltilen motor hataları (regresyon testli)
+
+| Hata | Belirti | Test |
+|---|---|---|
+| Faz `ShotPending`'te kalıyordu | `PendingShot` temizleniyor, faz dönmüyor; "ilerleme yok" abortu | `ManualAdvanceLoopMatchesSimulate` (M2) |
+| Serbest atış puanı box score'a yazılmıyordu | Skor 74, box score PTS 64 | `ScoreEqualsTwoPointersPlusThreePointersPlusFreeThrows` |
+| Hücum faulü `ShotAttempt` yayınlıyordu | Settlement'sız şut; tek aksiyon iki kez sayılıyordu | `EveryShotAttemptIsSettledByExactlyOneMadeOrMissed`, `EveryProducedEventIsObservable` |
+| `!shotAttempted` dalında hücum saati kontrolü yoktu | İhlal hiç kaydedilmiyordu | `ShotClockExhaustionEndsThePossessionWithoutAKick` |
+| Şıtsız aksiyonda faul `ActionCompleted`'tan sonra çözülüyordu | Hücum faulü tek turnover yerine iki olay üretiyordu | `EveryProducedEventIsObservable` |
+| Yedekleme beşi doldurmuyordu | Foul-out birikince "sahada oyuncu yok" | `OnCourtAlwaysHasExactlyFiveLegalPlayers` |
+| Terminal durum eziliyordu | `NullReferenceException` / "ilerleme yok" | `NoLegalSubstituteAbortsMatchWithExplicitReason` |
+| Takım faulu periyotlar arası taşınıyordu | 5. periyotta erken bonus | `TeamFoulCounterResetsAtEveryPeriodStart` |
+| Yalnız `MatchMissed` sayılan şut | `CountsAsFieldGoalAttempt` yalnız false yolunu test ediyordu | `MissedShotAwardsNoFieldGoalPoints` |
+
+### Hâlâ açık riskler (M3 sonrası)
+
+- Katsayılar kalibre değil. `FoulProbabilityPerAction = 0.12` gözlemlenen PF'i
+  makul aralığa getirdi ama NBA hedefi ölçülmedi (M6).
+- `MatchResult` tüm event'leri bellekte tutuyor; 100K deneyi için özet modu şart (M6).
+- `ImmutableArray<T>` JSON serileştirilmesi doğrulanmadı; `PendingShot`/`PendingFrees`
+  replay için şema sürümüyle birlikte ele alınmalı (M5).
+- `Advance` imzası M5'te genişleyecek (planlı, kayıtlı).
+- CI yok; doğrulama yalnızca yerel.
+- T03 (OVR) ve T15 (diagnostics) hâlâ uygulanamaz — yüzeyleri yok.

@@ -77,6 +77,22 @@ public sealed class BoxScoreProjector
                 case MatchEventType.Rebound:
                     CountRebound(matchEvent);
                     break;
+
+                case MatchEventType.Foul:
+                    CountFoul(matchEvent);
+                    break;
+
+                case MatchEventType.FreeThrowAttempt:
+                    CountFreeThrowAttempt(matchEvent);
+                    break;
+
+                case MatchEventType.FreeThrowMade:
+                    CountFreeThrowMade(matchEvent);
+                    break;
+
+                case MatchEventType.Block:
+                    CountBlock(matchEvent);
+                    break;
             }
         }
 
@@ -198,6 +214,55 @@ public sealed class BoxScoreProjector
         }
     }
 
+    private void CountFoul(MatchEvent matchEvent)
+    {
+        var foul = matchEvent.PayloadAs<FoulPayload>();
+        var side = Side(matchEvent.TeamId, "Foul");
+
+        if (foul.Type == FoulType.Offensive)
+        {
+            // 06 §88: hucum faulu savunma bonusunu tetiklemez.
+            return;
+        }
+
+        Shooter(matchEvent.PlayerId, side).PersonalFouls += 1;
+        Team(side).PersonalFouls += 1;
+    }
+
+    private void CountFreeThrowAttempt(MatchEvent matchEvent)
+    {
+        var attempt = matchEvent.PayloadAs<FreeThrowAttemptPayload>();
+        var side = Side(matchEvent.TeamId, "FreeThrowAttempt");
+        var shooter = Shooter(matchEvent.PlayerId, side);
+
+        shooter.FreeThrowAttempts += 1;
+        Team(side).FreeThrowAttempts += 1;
+    }
+
+    private void CountFreeThrowMade(MatchEvent matchEvent)
+    {
+        var side = Side(matchEvent.TeamId, "FreeThrowMade");
+        var shooter = Shooter(matchEvent.PlayerId, side);
+        var team = Team(side);
+
+        shooter.FreeThrowMakes += 1;
+        team.FreeThrowMakes += 1;
+
+        // Serbest atis puani ayrica sayilir: 08 §2 skor = 2*2PM + 3*3PM + FTM.
+        shooter.Points += 1;
+        team.Points += 1;
+    }
+
+    private void CountBlock(MatchEvent matchEvent)
+    {
+        // 07 §3: blok ikinci FGA yazmaz ve yeni miss uretmez; yalnizca blok
+        // sayacini artirir. Miss zaten ShotMissed ile yazildi.
+        var side = Side(matchEvent.TeamId, "Block");
+
+        Shooter(matchEvent.PlayerId, side).Blocks += 1;
+        Team(side).Blocks += 1;
+    }
+
     private TeamBoxScore BuildTeamBoxScore(TeamSide side)
     {
         var tally = Team(side);
@@ -214,6 +279,10 @@ public sealed class BoxScoreProjector
             ThreePointersAttempted = tally.ThreeAttempts,
             Assists = tally.Assists,
             Turnovers = tally.Turnovers,
+            PersonalFouls = tally.PersonalFouls,
+            FreeThrowAttempts = tally.FreeThrowAttempts,
+            FreeThrowMakes = tally.FreeThrowMakes,
+            Blocks = tally.Blocks,
             OffensiveRebounds = tally.OffensiveRebounds,
             DefensiveRebounds = tally.DefensiveRebounds,
             TeamRebounds = tally.TeamRebounds,
@@ -239,6 +308,10 @@ public sealed class BoxScoreProjector
             ThreePointersAttempted = tally.ThreeAttempts,
             Assists = tally.Assists,
             Turnovers = tally.Turnovers,
+            PersonalFouls = tally.PersonalFouls,
+            FreeThrowAttempts = tally.FreeThrowAttempts,
+            FreeThrowMakes = tally.FreeThrowMakes,
+            Blocks = tally.Blocks,
             OffensiveRebounds = tally.OffensiveRebounds,
             DefensiveRebounds = tally.DefensiveRebounds,
             TeamRebounds = 0,
@@ -305,6 +378,14 @@ public sealed class BoxScoreProjector
         public int Assists { get; set; }
 
         public int Turnovers { get; set; }
+
+        public int PersonalFouls { get; set; }
+
+        public int FreeThrowAttempts { get; set; }
+
+        public int FreeThrowMakes { get; set; }
+
+        public int Blocks { get; set; }
 
         public int OffensiveRebounds { get; set; }
 

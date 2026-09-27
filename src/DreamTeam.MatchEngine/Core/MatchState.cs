@@ -31,6 +31,15 @@ public sealed record MatchState
     /// <summary>Aktif hücum. Dead-ball, periyot arası ve terminal durumlarda null.</summary>
     public required PossessionState? Possession { get; init; }
 
+    /// <summary>
+    /// M3: bırakılmış şut. M2'de şut senkron çözülürdü; artık iki adıma bölünür
+    /// ve bu alan ara durumu taşır. M5'te serileştirilecektir.
+    /// </summary>
+    public required PendingShot? PendingShot { get; init; }
+
+    /// <summary>M3: devam eden serbest atış serisi. M5'te serileştirilecektir.</summary>
+    public required PendingFreeThrowSeries? PendingFrees { get; init; }
+
     /// <summary>Bir sonraki event sequence'ı. 1'den başlar.</summary>
     public required long NextSequence { get; init; }
 
@@ -42,6 +51,12 @@ public sealed record MatchState
 
     /// <summary>Bir sonraki turnover kimliği. 1'den başlar, maç boyunca artar.</summary>
     public required long NextTurnoverId { get; init; }
+
+    /// <summary>M3: bir sonraki faul kimliği.</summary>
+    public required long NextFoulId { get; init; }
+
+    /// <summary>M3: bir sonraki serbest atış seri kimliği.</summary>
+    public required long NextFTSeriesId { get; init; }
 
     /// <summary>Maç boyunca oynanan toplam aksiyon sayısı. Guard sayacı.</summary>
     public required int TotalActionCount { get; init; }

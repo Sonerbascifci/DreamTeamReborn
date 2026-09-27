@@ -141,6 +141,11 @@ public class DeterminismTests
                 MatchEventType.ShotMissed => typeof(ShotMissedPayload),
                 MatchEventType.Rebound => typeof(ReboundPayload),
                 MatchEventType.Turnover => typeof(TurnoverPayload),
+                MatchEventType.Block => typeof(BlockPayload),
+                MatchEventType.Foul => typeof(FoulPayload),
+                MatchEventType.FreeThrowAttempt => typeof(FreeThrowAttemptPayload),
+                MatchEventType.FreeThrowMade => typeof(FreeThrowMadePayload),
+                MatchEventType.FreeThrowMissed => typeof(FreeThrowMissedPayload),
                 _ => throw new InvalidOperationException($"Bilinmeyen event türü: {matchEvent.Type}"),
             };
 

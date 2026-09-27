@@ -18,7 +18,7 @@ internal static class SingleMatchReport
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(result);
 
-        writer.WriteLine("Dream Team Reborn — Match Engine v0.1 (M2 vertical slice)");
+        writer.WriteLine("Dream Team Reborn — Match Engine v0.1 (M3 kural butunlugu)");
         writer.WriteLine(new string('=', 78));
         writer.WriteLine($"MatchId      : {result.MatchId}");
         writer.WriteLine($"Engine       : {engine.EngineVersion}   Rules: {engine.RulesVersion}");
@@ -32,10 +32,12 @@ internal static class SingleMatchReport
         {
             // Terminal olmayan sonuçta skor ve box score geçersizdir; uydurma tablo
             // yazmak yerine eksikliği açıkça belirt.
-            writer.WriteLine("SCORE        : geçersiz (maç tamamlanmadı)");
-            writer.WriteLine($"Event sayısı : {result.Events.Length}");
+            writer.WriteLine("SCORE        : gecersiz (mac tamamlanmadi)");
+            writer.WriteLine($"Event sayisi : {result.Events.Length}");
             writer.WriteLine();
             writer.WriteLine("Abort nedeni: " + (result.AbortReason ?? "belirtilmedi"));
+            writer.WriteLine();
+            WriteEventTrace(writer, result);
             writer.WriteLine();
             WriteIncompletenessNotice(writer);
             return;
@@ -54,8 +56,11 @@ internal static class SingleMatchReport
         WriteStat(writer, "FG", home, away, f => $"{f.FieldGoalsMade}-{f.FieldGoalsAttempted}");
         WriteStat(writer, "2P", home, away, f => $"{f.TwoPointersMade}-{f.TwoPointersAttempted}");
         WriteStat(writer, "3P", home, away, f => $"{f.ThreePointersMade}-{f.ThreePointersAttempted}");
+        WriteStat(writer, "FT", home, away, f => $"{f.FreeThrowMakes}-{f.FreeThrowAttempts}");
         WriteStat(writer, "AST", home, away, f => $"{f.Assists}");
         WriteStat(writer, "TOV", home, away, f => $"{f.Turnovers}");
+        WriteStat(writer, "PF", home, away, f => $"{f.PersonalFouls}");
+        WriteStat(writer, "BLK", home, away, f => $"{f.Blocks}");
         WriteStat(writer, "OREB", home, away, f => $"{f.OffensiveRebounds}");
         WriteStat(writer, "DREB", home, away, f => $"{f.DefensiveRebounds}");
         WriteStat(writer, "PTS", home, away, f => $"{f.Points}");
@@ -84,10 +89,17 @@ internal static class SingleMatchReport
         writer.WriteLine($"Toplam event : {result.Events.Length}");
 
         writer.WriteLine();
-        writer.WriteLine("İlk olaylar (akış denetimi için):");
+        WriteEventTrace(writer, result);
+        writer.WriteLine();
+        WriteIncompletenessNotice(writer);
+    }
+
+    private static void WriteEventTrace(TextWriter writer, MatchResult result)
+    {
+        writer.WriteLine("Olay akisi denetimi (ilk 24):");
         writer.WriteLine(Divider());
 
-        foreach (var matchEvent in result.Events.Take(20))
+        foreach (var matchEvent in result.Events.Take(24))
         {
             writer.WriteLine(
                 $"  #{matchEvent.Sequence,-5} P{matchEvent.Period} "
@@ -97,9 +109,6 @@ internal static class SingleMatchReport
                 + $"act {matchEvent.ActionId?.ToString() ?? "-",-4} "
                 + $"{matchEvent.Type,-17} {Describe(matchEvent)}");
         }
-
-        writer.WriteLine();
-        WriteIncompletenessNotice(writer);
     }
 
     private static string Describe(MatchEvent matchEvent) => matchEvent.Type switch
@@ -110,27 +119,35 @@ internal static class SingleMatchReport
         MatchEventType.Turnover => matchEvent.PayloadAs<TurnoverPayload>().Kind.ToString(),
         MatchEventType.Rebound => matchEvent.PayloadAs<ReboundPayload>().Offensive ? "OREB" : "DREB",
         MatchEventType.PossessionEnded => matchEvent.PayloadAs<PossessionEndedPayload>().Reason.ToString(),
+        MatchEventType.Foul => $"{matchEvent.PayloadAs<FoulPayload>().Type} "
+            + $"-> {matchEvent.PayloadAs<FoulPayload>().FreeThrowCount} FT",
+        MatchEventType.Block => $"blok: {matchEvent.PayloadAs<BlockPayload>().DefenderId.ToString()[..8]}",
+        MatchEventType.FreeThrowMade => $"{matchEvent.PayloadAs<FreeThrowMadePayload>().Index + 1}/"
+            + $"{matchEvent.PayloadAs<FreeThrowMadePayload>().Count} isabet",
+        MatchEventType.FreeThrowMissed => $"{matchEvent.PayloadAs<FreeThrowMissedPayload>().Index + 1}/"
+            + $"{matchEvent.PayloadAs<FreeThrowMissedPayload>().Count} kacti"
+            + (matchEvent.PayloadAs<FreeThrowMissedPayload>().BallIsLive ? " (canli)" : string.Empty),
         _ => string.Empty,
     };
 
     private static void WriteIncompletenessNotice(TextWriter writer)
     {
-        writer.WriteLine("!! BU ÇIKTI TAMAMLANMIŞ BİR MAÇ MOTORU DEĞİLDİR");
+        writer.WriteLine("!! BU CIKTI TAMAMLANMIS BIR MAC MOTORU DEGILDIR");
         writer.WriteLine(new string('-', 78));
 
         foreach (var line in new[]
                  {
-                     "Yok: faul, serbest atış, and-one, bonus, blok, top çalma.",
-                     "Yok: out-of-bounds, substitution, timeout, uzatma (OT).",
-                     "Yok: savunma taktiği çözümü, tempo, enerji/stamina, rol uyumu.",
-                     "Yok: composite rating, OVR, taktik başarı etkisi.",
+                     "Yok: out-of-bounds, substitution penceresi, timeout, jump ball,",
+                     "     defensive three seconds, technical/flagrant foul.",
+                     "Savunma taktigi cozumu YOK: taktik etkisi sayilmiyor.",
+                     "Tempo, enerji/stamina, rol uyumu, composite rating ve OVR YOK.",
                      "",
-                     "Bu sonuçlar KALİBRE EDİLMEMİŞ başlangıç katsayılarıyla üretildi.",
-                     "Ortalama skor gerçekçi görünse de bu denge kanıtı değildir.",
-                     "Sayısal doğrulama 10K/100K deneylerine (M6) bırakılmıştır.",
-                     "Eşitlikte kazanan seçilmemiştir; rastgele kazanan üretilmez.",
+                     "Bu sonuclar KALIBRE EDILMEMIS baslangic katsayilariyla uretildi.",
+                     "Ortalama skor gercekci gorunse de bu denge kaniti degildir.",
+                     "Sayisal dogrulama 10K/100K deneylerine (M6) birakilmistir.",
+                     "Egalikte kazanan secilmemistir; rastgele kazanan uretilmez.",
                      "",
-                     "Sıradaki adım: M3 kuralları (foul/FT/clock/OT).",
+                     "Siradaki adim: M4 oyuncu/tantik kararlarinin etkisi.",
                  })
         {
             writer.WriteLine("   " + line);

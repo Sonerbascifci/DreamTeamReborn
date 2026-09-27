@@ -7,6 +7,13 @@ public enum PossessionEndReason
     DefensiveRebound,
     Turnover,
 
+    /// <summary>
+    /// M3: bonuslu savunma non-shooting faulu. Serbest atislar oynandiktan
+    /// sonra top rakibe gider. 06 §4 tablosunda bu satir yoktu; ayrim
+    /// turnover'i da degil, D40 profilinin sonucunu adlandirir.
+    /// </summary>
+    BonusFreeThrows,
+
     /// <summary>Periyot saati dolduğunda yarım kalan hücum.</summary>
     PeriodExpired,
 }

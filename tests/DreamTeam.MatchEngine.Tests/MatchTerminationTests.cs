@@ -52,12 +52,12 @@ public class MatchTerminationTests
     }
 
     [Fact]
-    public void NoOvertimeIsInventedForATiedMatch()
+    public void TieIsResolvedByOvertimeNotByARandomWinner()
     {
-        // 06 §8: eşit maça rastgele kazanan seçilmez. M2'de uzatma yoktur, bu
-        // yüzden eşitlik kazanan üretmeden Completed olur.
-        var ties = 0;
-        var completed = 0;
+        // 06 §8: esit maca rastgele kazanan secilmez. M3'te uzatma vardir: mac
+        // 4 periyottan sonra esitse 5. periyot acilir.
+        var overtimeMatches = 0;
+        var tiedAfterFour = 0;
 
         for (var seed = 0UL; seed < 120UL; seed++)
         {
@@ -68,29 +68,54 @@ public class MatchTerminationTests
                 continue;
             }
 
-            completed += 1;
-
             var payload = result.Events.Single(e => e.Type == MatchEventType.MatchEnded)
                 .PayloadAs<MatchEndedPayload>();
 
             Assert.Equal(result.HomeScore == result.AwayScore, payload.IsTie);
-            Assert.Equal(result.IsTie, payload.IsTie);
 
-            if (result.IsTie)
+            if (result.PeriodsPlayed > M2TestData.Config().Rules.PeriodCount)
             {
-                ties += 1;
+                overtimeMatches += 1;
+            }
+            else if (result.IsTie)
+            {
+                tiedAfterFour += 1;
             }
         }
 
-        Assert.True(ties > 0, "Hiç eşitlik oluşmadı; eşitlik yolu test edilemedi.");
+        Assert.True(overtimeMatches > 0, "Hicbir mac uzatmaya gitmedi; uzatma yolu test edilemedi.");
+        Assert.True(tiedAfterFour == 0, "Esitlik 4 periyotta birakildi; uzatma kurali devreye girmeli.");
+    }
 
-        // Eşitlikte de tam 4 periyot oynanır; uzatma periyodu üretilmez.
-        var tied = Enumerable.Range(0, (int)completed)
-            .Select(index => new MatchSimulation(M2TestData.Config()).Simulate(M2TestData.NeutralMirror((ulong)index)))
-            .First(r => r.Status == MatchStatus.Completed && r.IsTie);
+    [Fact]
+    public void OvertimePeriodsAreShorterAndFlagged()
+    {
+        var rules = M2TestData.Config().Rules;
+        var found = false;
 
-        Assert.Equal(4, tied.PeriodsPlayed);
-        Assert.DoesNotContain(tied.Events, e => e.Type == MatchEventType.PeriodStarted && e.PayloadAs<PeriodStartedPayload>().IsOvertime);
+        for (var seed = 0UL; seed < 120UL && !found; seed++)
+        {
+            var result = new MatchSimulation(M2TestData.Config()).Simulate(M2TestData.NeutralMirror(seed));
+
+            foreach (var period in result.Events
+                         .Where(e => e.Type == MatchEventType.PeriodStarted)
+                         .Select(e => e.PayloadAs<PeriodStartedPayload>()))
+            {
+                if (period.StartedPeriod <= rules.PeriodCount)
+                {
+                    Assert.Equal(rules.PeriodDurationMs, period.PeriodDurationMs);
+                    Assert.False(period.IsOvertime);
+                }
+                else
+                {
+                    Assert.Equal(rules.OvertimeDurationMs, period.PeriodDurationMs);
+                    Assert.True(period.IsOvertime);
+                    found = true;
+                }
+            }
+        }
+
+        Assert.True(found, "Uzatma periyodu hic gorulmedi.");
     }
 
     [Fact]

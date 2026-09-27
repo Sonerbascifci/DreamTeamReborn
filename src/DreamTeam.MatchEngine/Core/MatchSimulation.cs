@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text;
 using DreamTeam.Domain.Players;
 using DreamTeam.Domain.Teams;
 using DreamTeam.MatchEngine.Actions;
@@ -11,55 +10,78 @@ using DreamTeam.MatchEngine.Randomness;
 namespace DreamTeam.MatchEngine.Core;
 
 /// <summary>
-/// Possession → action → shot/turnover/rebound çekirdeği. 03'teki sözleşmenin M2
-/// hâli: <c>Create</c> / <c>Advance</c> / <c>Simulate</c>.
+/// Possession -> action -> shot/foul/turnover/rebound cekirdegi.
 ///
-/// H03 gereği offline ve canlı yürütme <b>aynı</b> çekirdeği kullanır; burada ikinci
-/// bir simülasyon algoritması yoktur. Motor duvar saati okumaz, beklemez, dosya
+/// 03'teki sozlesmenin M3 hali: <c>Create</c> / <c>Advance</c> / <c>Simulate</c>.
+///
+/// H03 geregi offline ve canli yurutme <b>ayni</b> cekirdegi kullanir; burada ikinci
+/// bir simulasyon algoritmasi yoktur. Motor duvar saati okumaz, beklemez, dosya
 /// yazmaz ve loglamaz.
 ///
-/// Determinizm sözleşmesi — her aksiyon şu sırayla RNG tüketir:
+/// <b>Adim siniri (M3'te degisti).</b> M2'de bir <c>Advance</c> bir aksiyonu bastan
+/// sona bitiriyordu. M3'te iki arac durum vardir: birakilmis sut
+/// (<c>ShotPending</c>) ve devam eden serbest atis serisi (<c>FreeThrows</c>).
+/// <c>Advance</c> bir sonraki <b>anlamli sinra</b> ilerler ve bu sinir bir
+/// aksiyonu bitirmek zorunda degildir. <c>Simulate</c> dongusu degismez.
+///
+/// <para><b>Determinism sozlesmesi</b> — her aksiyon su sirayla RNG tuketir:</para>
 /// <list type="number">
-///   <item><description><c>ActionSelector</c>: aksiyon (1) + oyuncu (1)</description></item>
-///   <item><description><c>TurnoverResolver</c>: top kaybı (1)</description></item>
-///   <item><description>şut denemesine dönüşme (1)</description></item>
-///   <item><description>asist (1) — yalnız şut atıldıysa</description></item>
-///   <item><description><c>ShotResolver</c>: isabet (1) — yalnız şut atıldıysa</description></item>
-///   <item><description><c>ReboundResolver</c>: OREB/DREB (1) + ribaund alan (1) — yalnız canlı miss ise</description></item>
+///   <item><description>aksiyon (1) + oyuncu (1)</description></item>
+///   <item><description>top kaybi (1)</description></item>
+///   <item><description>faul olma (1)</description></item>
+///   <item><description>suta donusme (1)</description></item>
+///   <item><description>hucre faulu (1) — yalniz faul varsa</description></item>
+///   <item><description>shooting faulu (1) — yalniz faul ve sut varsa</description></item>
+///   <item><description>cember teması (1) — yalniz sut varsa</description></item>
+///   <item><description>blok (1) — yalniz sut varsa</description></item>
+///   <item><description>isabet (1) — yalniz sut varsa ve bloklanmadıysa</description></item>
+///   <item><description>serbest atis (1) — her atis icin</description></item>
+///   <item><description>ribaund (1) + ribaund alan (1) — yalniz canli miss sonrasi</description></item>
 /// </list>
-/// Bu sıra değiştirilirse tüm golden sonuçlar değişir; sıra testlerle sabitlenir.
+/// Bu sira degistirilirse tum golden sonuclar degisir; sira testlerle sabitlenir.
+/// Blok gerceklesirse isabet cekilisi <b>tuketilmez</b>: ayni sut iki kez
+/// orneklenmez (05 §127).
 /// </summary>
 public sealed class MatchSimulation
 {
-    public const int EventSchemaVersion = 1;
+    public const int EventSchemaVersion = 2;
 
     private readonly EngineConfig _config;
     private readonly string _configHash;
     private readonly ShotResolver _shotResolver;
     private readonly TurnoverResolver _turnoverResolver;
     private readonly ReboundResolver _reboundResolver;
+    private readonly FoulResolver _foulResolver;
+    private readonly BlockResolver _blockResolver;
+    private readonly RimContactResolver _rimContactResolver;
+    private readonly FreeThrowResolver _freeThrowResolver;
 
     public MatchSimulation(EngineConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+
         _config = config;
         _configHash = config.ComputeConfigHash();
         _shotResolver = new ShotResolver(config.Shot);
         _turnoverResolver = new TurnoverResolver(config.Actions);
         _reboundResolver = new ReboundResolver(config.Actions);
+        _foulResolver = new FoulResolver(config.Fouls);
+        _blockResolver = new BlockResolver(config.Shot);
+        _rimContactResolver = new RimContactResolver(config.Shot);
+        _freeThrowResolver = new FreeThrowResolver(config.FreeThrows);
     }
 
     public string ConfigHash => _configHash;
 
     /// <summary>
-    /// Doğrulanmış bir setup'tan başlangıç durumu üretir.
+    /// Dogrulanmis bir setup'tan baslangic durumu uretir.
     ///
-    /// <paramref name="setup"/> <see cref="MatchSetupValidator"/> tarafından kabul
-    /// edilmiş olmalıdır. Doğrulama <b>bu metodun sorumluluğu değildir</b>: kullanıcı
-    /// girdisinin reddi istisnayla değil, <see cref="MatchSetupValidationResult"/> ile
-    /// bildirilir (D26). <see cref="Simulate"/> bu sözleşmeyi kendisi uygular;
-    /// doğrudan <c>Create</c> çağıran, geçersiz setup geçirirse program hatası
-    /// yapmış olur ve bu bir <see cref="InvalidOperationException"/> ile belirtilir.
+    /// <paramref name="setup"/> <see cref="MatchSetupValidator"/> tarafindan kabul
+    /// edilmis olmalidir. Dogrulama <b>bu metodun sorumlulugu degildir</b>: kullanici
+    /// girdisinin reddi istisnayla degil, <see cref="MatchSetupValidationResult"/> ile
+    /// bildirilir (D26). <see cref="Simulate"/> bu sozlesmeyi kendisi uygular;
+    /// dogrudan <c>Create</c> cagirana gecersiz setup gecirirse program hatasi
+    /// yapmis olur ve bu bir <see cref="InvalidOperationException"/> ile belirtilir.
     /// </summary>
     public MatchState Create(MatchSetup setup)
     {
@@ -90,10 +112,14 @@ public sealed class MatchSimulation
             HomeScore = 0,
             AwayScore = 0,
             Possession = null,
+            PendingShot = null,
+            PendingFrees = null,
             NextSequence = 1,
             NextActionId = 1,
             NextShotId = 1,
             NextTurnoverId = 1,
+            NextFoulId = 1,
+            NextFTSeriesId = 1,
             TotalActionCount = 0,
             PossessionCount = 0,
             Random = new SeededRandom(setup.Seed),
@@ -101,8 +127,8 @@ public sealed class MatchSimulation
     }
 
     /// <summary>
-    /// Bir sonraki anlamlı sınra ilerler: periyot başlangıcı, bir aksiyonun tamamı veya
-    /// terminal durum. Yarıda kalmış şut veya serbest atış yoktur (M3 konusu).
+    /// Bir sonraki anlamli sinra ilerler: periyot baslangici, bir aksiyonun
+    /// basindaki adim, birakilmis sutun cozumu veya bir serbest atis.
     /// </summary>
     public StepResult Advance(MatchState state)
     {
@@ -115,24 +141,40 @@ public sealed class MatchSimulation
 
         var step = new Step(this, state);
 
-        if (state.Phase is MatchPhase.NotStarted or MatchPhase.PeriodBreak)
+        if (state.PendingFrees is not null)
+        {
+            step.ResolveFreeThrow();
+        }
+        else if (state.PendingShot is not null)
+        {
+            step.ResolvePendingShot();
+        }
+        else if (state.Phase is MatchPhase.NotStarted or MatchPhase.PeriodBreak)
         {
             step.StartPeriod();
         }
-
-        if (!step.State.IsTerminal)
+        else if (state.Phase == MatchPhase.LiveBall)
         {
             step.RunAction();
+        }
+        else
+        {
+            // Ulasilamaz durum: bekleyen sut/seri yok, terminal degil, ama faz
+            // tanimli degil. Sessizce 0 event uretmek yerine aninda ve acikca
+            // hata vermek, bu turden bir hatayi gizlemez.
+            throw new InvalidOperationException(
+                $"Beklenmeyen match phase: {state.Phase} "
+                + $"(PossessionId={state.Possession?.PossessionId.ToString() ?? "-"}).");
         }
 
         return StepResult.NonTerminal(step.State, [.. step.Events]);
     }
 
     /// <summary>
-    /// <c>Create</c> + <c>Advance</c> döngüsünü sonuna kadar çalıştırır. Konsol,
-    /// batch deneyleri ve ileride canlı runner hep bu yolu kullanır.
+    /// <c>Create</c> + <c>Advance</c> dongusunu sonuna kadar calistirir. Konsol,
+    /// batch deneyleri ve ileride canli runner hep bu yolu kullanir.
     ///
-    /// Setup reddedilirse maç oynanmaz; <c>Aborted</c> sonuç ve gerekçe döner.
+    /// Setup reddedilirse mac oynanmaz; <c>Aborted</c> sonuc ve gerekce doner.
     /// </summary>
     public MatchResult Simulate(MatchSetup setup)
     {
@@ -156,9 +198,9 @@ public sealed class MatchSimulation
 
             if (step.Events.Length == 0 && !state.IsTerminal)
             {
-                // İlerleme yoksa sonsuz döngü riski oluşur. 06 §2: sonsuz döngü
-                // skoru bozmaz, maçı Aborted yapar.
-                return AbortedResult(setup, "İlerleme yok; motor durdu. Bu bir hata durumudur.", events);
+                // Ilerleme yoksa sonsuz dongu riski olusur. 06 §2: sonsuz dongu
+                // skoru bozmaz, maci Aborted yapar.
+                return AbortedResult(setup, "Ilerleme yok; motor durdu. Bu bir hata durumudur.", events);
             }
         }
 
@@ -268,12 +310,15 @@ public sealed class MatchSimulation
             Team = team,
             Roster = RosterOrdering.Canonical(team.Roster),
             OnCourt = onCourt.ToImmutable(),
+            Fouls = FoulCounters.Empty,
+            FoulOutPlayerIds = [],
         };
     }
 
     /// <summary>
-    /// Tek bir <c>Advance</c> adımının çalışma bağlamı. Event'leri toplar ve zarfı
-    /// tek noktadan damgalar; böylece hiçbir event eksik veya tutarsız zarla üretilemez.
+    /// Tek bir <c>Advance</c> adiminin calisma baglami. Event'leri toplar ve zarfi
+    /// tek noktadan damgalar; boylece hicbir event eksik veya tutarsiz zarla
+    /// uretilemez.
     /// </summary>
     private sealed class Step(MatchSimulation engine, MatchState state)
     {
@@ -284,20 +329,36 @@ public sealed class MatchSimulation
 
         public MatchState State => _state;
 
+        // ---------------------------------------------------------------- periyot
+
         public void StartPeriod()
         {
             var period = _state.Clock.Period + 1;
             var isFirstPeriod = period == 1;
+            var rules = _engine._config.Rules;
 
             var clock = _state.Clock.BeginPeriod(
                 period,
-                _engine._config.Rules.PeriodDurationMs,
-                _engine._config.Rules.ShotClockMs);
+                PeriodController.DurationMsForPeriod(rules, period),
+                ClockResetPolicy.ForNewPossession(rules));
+
+            // Takim faulu periyot sayacidir: her periyot basinda sifirlanir.
+            // D42'nin uzatma sarti bunun alt kumesidir.
+            var home = _state.Home;
+            var away = _state.Away;
+
+            if (PeriodController.ResetsTeamFouls(rules, period))
+            {
+                home = home.WithFouls(home.Fouls.ResetTeamFouls());
+                away = away.WithFouls(away.Fouls.ResetTeamFouls());
+            }
 
             _state = _state with
             {
                 Clock = clock,
                 Phase = MatchPhase.LiveBall,
+                Home = home,
+                Away = away,
             };
 
             if (isFirstPeriod)
@@ -314,7 +375,10 @@ public sealed class MatchSimulation
 
             Emit(
                 MatchEventType.PeriodStarted,
-                new PeriodStartedPayload(period, _engine._config.Rules.PeriodDurationMs, IsOvertime: false),
+                new PeriodStartedPayload(
+                    period,
+                    PeriodController.DurationMsForPeriod(rules, period),
+                    PeriodController.IsOvertime(rules, period)),
                 possessionId: null,
                 actionId: null,
                 teamId: null,
@@ -324,19 +388,78 @@ public sealed class MatchSimulation
             StartPossession(DrawStarterSide());
         }
 
+        private void ClosePeriod()
+        {
+            EndPossessionIfOpen(PossessionEndReason.PeriodExpired);
+
+            Emit(
+                MatchEventType.PeriodEnded,
+                new PeriodEndedPayload(
+                    _state.Clock.Period,
+                    PeriodController.IsOvertime(_engine._config.Rules, _state.Clock.Period)),
+                possessionId: null,
+                actionId: null,
+                teamId: null,
+                playerId: null,
+                secondaryPlayerId: null);
+
+            var rules = _engine._config.Rules;
+
+            if (PeriodController.ShouldStartOvertime(
+                    rules,
+                    _state.Clock.Period,
+                    _state.HomeScore,
+                    _state.AwayScore))
+            {
+                // Uzatma: kazanan rastgele secilmez, periyot oynanir (06 §8).
+                _state = _state with { Phase = MatchPhase.PeriodBreak };
+                return;
+            }
+
+            if (_state.Clock.Period >= rules.PeriodCount)
+            {
+                _state = _state with { Phase = MatchPhase.Completed };
+
+                Emit(
+                    MatchEventType.MatchEnded,
+                    new MatchEndedPayload(_state.HomeScore, _state.AwayScore, _state.HomeScore == _state.AwayScore),
+                    possessionId: null,
+                    actionId: null,
+                    teamId: null,
+                    playerId: null,
+                    secondaryPlayerId: null);
+                return;
+            }
+
+            _state = _state with { Phase = MatchPhase.PeriodBreak };
+        }
+
+        /// <summary>
+        /// Periyot acilisini belirler (D32). Tek bir bit cekilir: modulo bias yoktur
+        /// ve ayni seed ayni baslangici verir. 06 §4, home/away bias yaratmayacak
+        /// seeded yontem ister; toplu denge M6'nin isidir.
+        /// </summary>
+        private TeamSide DrawStarterSide() =>
+            (_state.Random.NextUInt64() & 1UL) == 0UL ? TeamSide.Home : TeamSide.Away;
+
+        // ----------------------------------------------------------------- aksiyon
+
         public void RunAction()
         {
             if (_state.TotalActionCount >= _engine._config.MaxActionsPerMatch)
             {
                 Abort(
-                    $"Eylem guard'ı aşıldı: {_state.TotalActionCount} >= "
-                    + $"{_engine._config.MaxActionsPerMatch}. Skor geçerli değildir.");
+                    $"Eylem guard'i asildi: {_state.TotalActionCount} >= "
+                    + $"{_engine._config.MaxActionsPerMatch}. Skor gecerli degildir.");
                 return;
             }
 
-            var offense = _state.Possession?.Offense ?? throw new InvalidOperationException("Aksiyon yok: possession yok.");
+            var offense = _state.Possession?.Offense
+                ?? throw new InvalidOperationException("Aksiyon yok: possession yok.");
+
             var attacking = _state.Team(offense);
             var selector = new ActionSelector(_engine._config.ActionProfiles, attacking.OnCourt);
+
             var actionId = _state.NextActionId;
             var selection = selector.Select(_state.Random);
 
@@ -350,6 +473,7 @@ public sealed class MatchSimulation
                 },
             };
 
+            // 1) top kaybi
             var turnover = _engine._turnoverResolver.Resolve(_state.Random);
 
             if (turnover.IsTurnover)
@@ -357,11 +481,10 @@ public sealed class MatchSimulation
                 _state = _state.Consume(_engine._config.Actions.SetupActionMs);
                 RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.LostBall);
                 EndPossession(PossessionEndReason.Turnover);
-                HandleClockAfterPossession(offense);
+                HandleAfterPossession(offense);
                 return;
             }
 
-            // Aksiyonun kurulum aşaması canlı süre tüketir.
             _state = _state.Consume(_engine._config.Actions.SetupActionMs);
 
             if (_state.Clock.IsGameTimeExhausted)
@@ -371,20 +494,68 @@ public sealed class MatchSimulation
                 return;
             }
 
-            var completesIntoShot = _state.Random.NextDouble() < _engine._config.Actions.ShotCompletionProbability;
+            // 2) faul olma
+            var foul = _engine._foulResolver.Occurred(_state.Random);
 
-            if (!completesIntoShot)
+            // 3) suta donusme
+            var shotAttempted = _state.Random.NextDouble()
+                < _engine._config.Actions.ShotCompletionProbability;
+
+            // Ortak hucre saati kontrolu. Aksiyonun canli suresi bu noktada
+            // tuketildi; saat sifira dustuyse ihlal olusur. Kontrolun iki dalda
+            // da gecerli olmasi gerekir: aksi halde hucrem suta donusmedigi
+            // surece sonsuza kadar devam eder ve ihlal hic kaydedilmez.
+            if (_state.Clock.IsShotClockExhausted)
             {
-                if (_state.Clock.IsShotClockExhausted)
+                RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.ShotClockViolation);
+                EndPossession(PossessionEndReason.Turnover);
+                HandleAfterPossession(offense);
+                return;
+            }
+
+            if (!shotAttempted)
+            {
+                // Suta donusmedi. Faul ONCE cozulur: hucre faulu aksiyonu iptal
+                // eder ve TEK turnover uretir. ActionCompleted ile birlikte
+                // sayilirsa ayni aksiyon iki kez muhasebelenmis olur.
+                if (foul.IsFoul)
                 {
-                    RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.ShotClockViolation);
-                    EndPossession(PossessionEndReason.Turnover);
-                    HandleClockAfterPossession(offense);
-                    return;
+                    if (_engine._foulResolver.IsOffensive(_state.Random))
+                    {
+                        ApplyOffensiveFoul(offense, _state.NextFoulId, selection, actionId);
+                        return;
+                    }
+
+                    var bonusActive = _engine._foulResolver.IsInBonus(
+                        _state.Team(offense.Opponent()).Fouls.TeamFoulsThisPeriod);
+
+                    ApplyFoul(
+                        offense,
+                        _state.NextFoulId,
+                        PickDefender(offense),
+                        FoulType.NonShooting,
+                        0,
+                        selection.PlayerId,
+                        actionId);
+
+                    if (bonusActive)
+                    {
+                        StartFreeThrowSeriesWithoutShot(
+                            offense,
+                            selection,
+                            _engine._config.Fouls.BonusFreeThrowCount);
+                        return;
+                    }
+
+                    // Bonus yok: hucrem korunur, hucre saati 14 s'e iner (06 §4, §89).
+                    ResetShotClockForDefensiveFoul(offense);
+
+                    if (_state.IsTerminal)
+                    {
+                        return;
+                    }
                 }
 
-                // Aksiyon şutla sonuçlanmadı; possession canlı devam eder. Zaman
-                // ilerlediği için bu adım event akışında görünür olmalıdır.
                 Emit(
                     MatchEventType.ActionCompleted,
                     new ActionCompletedPayload(selection.Action),
@@ -393,23 +564,70 @@ public sealed class MatchSimulation
                     teamId: offense,
                     playerId: selection.PlayerId,
                     secondaryPlayerId: null);
+
                 return;
             }
 
-            if (_state.Clock.IsShotClockExhausted)
-            {
-                RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.ShotClockViolation);
-                EndPossession(PossessionEndReason.Turnover);
-                HandleClockAfterPossession(offense);
-                return;
-            }
-
-            AttemptShot(offense, selection, actionId);
+            ReleaseShot(offense, selection, actionId, foul);
         }
 
-        private void AttemptShot(TeamSide offense, ActionSelection selection, long actionId)
+        /// <summary>
+        /// Hucum faulu tespit edilirse sut hiç denenmez: düdük bırakmadan once
+        /// çalar, bu yuzden <c>ShotAttempt</c> yayınlanmaz ve settlement beklenmez
+        /// (07 §3: "ShotAttempt sutun kimligini acar"; acilan her shot kapanir).
+        /// Tek turnover yazilir, serbest atis yoktur (06 §88).
+        /// </summary>
+        private void ApplyOffensiveFoul(TeamSide offense, long foulId, ActionSelection selection, long actionId)
+        {
+            ApplyFoul(offense, foulId, selection.PlayerId, FoulType.Offensive, 0, null, actionId);
+
+            // Faulun kendisi foul-out'a yol actiysa ve yasal yedek yoksa motor
+            // Aborted olmustur. Terminal durumun uzerine turnover yazmak
+            // possession'i null uzerinden gecersizlestirir.
+            if (_state.IsTerminal)
+            {
+                return;
+            }
+
+            RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.OffensiveFoul);
+            EndPossession(PossessionEndReason.Turnover);
+            HandleAfterPossession(offense);
+        }
+
+        /// <summary>
+        /// Sut birakildi; sonucu bir sonraki adimda cozulecek. 06 §2: ucus suresi
+        /// canli oyun suresidir, bu yuzden burada tuketilir.
+        /// </summary>
+        private void ReleaseShot(
+            TeamSide offense,
+            ActionSelection selection,
+            long actionId,
+            FoulOutcome foul)
         {
             var shotId = _state.NextShotId;
+            var foulId = _state.NextFoulId;
+            long shooterFoulId = 0;
+            var foulType = FoulType.NonShooting;
+
+            // 5) hucre faulu — ShotAttempt ONCESI cozulur.
+            if (foul.IsFoul)
+            {
+                if (_engine._foulResolver.IsOffensive(_state.Random))
+                {
+                    ApplyOffensiveFoul(offense, foulId, selection, actionId);
+                    return;
+                }
+
+                // 6) shooting faulu: yalniz faul ve sut varsa anlamlidir
+                var isShooting = _engine._foulResolver.IsShooting(_state.Random);
+
+                if (isShooting)
+                {
+                    foulType = FoulType.Shooting;
+                    shooterFoulId = foulId;
+                }
+            }
+
             _state = _state with
             {
                 NextShotId = shotId + 1,
@@ -419,147 +637,504 @@ public sealed class MatchSimulation
                 },
             };
 
-            var shooterId = selection.PlayerId;
-
             Emit(
                 MatchEventType.ShotAttempt,
                 new ShotAttemptPayload(shotId, selection.ShotType),
                 possessionId: _state.Possession!.PossessionId,
                 actionId: actionId,
                 teamId: offense,
-                playerId: shooterId,
+                playerId: selection.PlayerId,
                 secondaryPlayerId: null);
 
-            var assisterId = SelectAssister(offense, shooterId);
+            if (shooterFoulId != 0)
+            {
+                var defenderId = PickDefender(offense);
+                ApplyFoul(offense, foulId, defenderId, foulType, 0, selection.PlayerId, actionId);
 
-            // Uçuş süresi canlı oyun süresidir; saat burada da ilerler.
+                // Faul foul-out'a yol actiysa ve yasal yedek yoksa motor Aborted
+                // olmustur. Bu durumun uzerine PendingShot yazmak terminal durumu
+                // ezer ve sonraki adim "shoot var ama possession yok" ile patlar.
+                if (_state.IsTerminal)
+                {
+                    return;
+                }
+            }
+
+            // 7) cember teması (06 §6 reset tablosu)
+            var rimContact = _engine._rimContactResolver.TouchedRim(_state.Random);
+
+            // Ucus suresi canli oyun suresidir.
             _state = _state.Consume(_engine._config.Actions.ShotFlightMs);
 
-            var outcome = _engine._shotResolver.Resolve(
-                selection.ShotType,
-                selection.SkillRating,
-                _state.Random);
+            _state = _state with
+            {
+                Phase = MatchPhase.ShotPending,
+                PendingShot = new PendingShot
+                {
+                    ActionId = actionId,
+                    ShotId = shotId,
+                    FoulId = shooterFoulId,
+                    FoulType = foulType,
+                    ShooterId = selection.PlayerId,
+                    ShotType = selection.ShotType,
+                    SkillRating = selection.SkillRating,
+                    RimContact = rimContact,
+                },
+            };
+        }
 
-            if (outcome.IsMade)
+        /// <summary>
+        /// Birakilmis sutun tek canonical settlement'i (07 §3). Burada blok, isabet
+        /// ve sayilabilirlik birlikte karar verilir; ikinci bir settlement yolu
+        /// yoktur.
+        /// </summary>
+        public void ResolvePendingShot()
+        {
+            var pending = _state.PendingShot
+                ?? throw new InvalidOperationException("Bekleyen şut yok.");
+
+            var offense = _state.Possession?.Offense
+                ?? throw new InvalidOperationException("Şut var ama possession yok.");
+
+            // 8) blok
+            var isBlocked = _engine._blockResolver.IsBlocked(_state.Random);
+
+            Guid? blockerId = null;
+
+            if (isBlocked)
+            {
+                blockerId = PickDefender(offense);
+            }
+
+            // 9) isabet: blok gerceklesmisse cekilis tuketilmez
+            var isMade = false;
+
+            if (!isBlocked)
+            {
+                var outcome = _engine._shotResolver.Resolve(
+                    pending.ShotType,
+                    pending.SkillRating,
+                    _state.Random);
+
+                isMade = outcome.IsMade;
+            }
+
+            // 06 §87: kacan shooting foul'da FGA sayilmaz. Isabetli shooting
+            // foul'da (and-one) FGA ve FGM yazilir.
+            var hasFoul = pending.FoulId != 0;
+            var countsAsFieldGoalAttempt = !hasFoul || isMade;
+
+            if (isBlocked)
             {
                 Emit(
-                    MatchEventType.ShotMade,
-                    new ShotMadePayload(shotId, selection.ShotType, outcome.Points, CountsAsFieldGoalAttempt: true),
+                    MatchEventType.Block,
+                    new BlockPayload(pending.ShotId, blockerId!.Value),
                     possessionId: _state.Possession!.PossessionId,
-                    actionId: actionId,
+                    actionId: pending.ActionId,
+                    teamId: offense.Opponent(),
+                    playerId: blockerId,
+                    secondaryPlayerId: pending.ShooterId);
+            }
+
+            if (isMade)
+            {
+                var points = ShotResolver.PointsFor(pending.ShotType);
+
+                Emit(
+                    MatchEventType.ShotMade,
+                    new ShotMadePayload(pending.ShotId, pending.ShotType, points, countsAsFieldGoalAttempt),
+                    possessionId: _state.Possession!.PossessionId,
+                    actionId: pending.ActionId,
                     teamId: offense,
-                    playerId: shooterId,
-                    secondaryPlayerId: assisterId);
+                    playerId: pending.ShooterId,
+                    secondaryPlayerId: SelectAssister(offense, pending.ShooterId));
 
                 _state = _state with
                 {
-                    HomeScore = offense == TeamSide.Home ? _state.HomeScore + outcome.Points : _state.HomeScore,
-                    AwayScore = offense == TeamSide.Away ? _state.AwayScore + outcome.Points : _state.AwayScore,
+                    HomeScore = offense == TeamSide.Home ? _state.HomeScore + points : _state.HomeScore,
+                    AwayScore = offense == TeamSide.Away ? _state.AwayScore + points : _state.AwayScore,
                 };
+            }
+            else
+            {
+                Emit(
+                    MatchEventType.ShotMissed,
+                    new ShotMissedPayload(pending.ShotId, pending.ShotType, countsAsFieldGoalAttempt),
+                    possessionId: _state.Possession!.PossessionId,
+                    actionId: pending.ActionId,
+                    teamId: offense,
+                    playerId: pending.ShooterId,
+                    secondaryPlayerId: null);
+            }
 
-                EndPossession(PossessionEndReason.Scored);
-                HandleClockAfterPossession(offense);
+            var freeThrowCount = hasFoul
+                ? _engine._foulResolver.FreeThrowCountFor(
+                    pending.FoulType,
+                    bonusActive: _engine._foulResolver.IsInBonus(
+                        _state.Team(offense.Opponent()).Fouls.TeamFoulsThisPeriod),
+                    shotAttempted: true,
+                    shotMade: isMade,
+                    pending.ShotType)
+                : 0;
+
+            // Bekleyen sut kapanir; faz da canli topa donmelidir. Faz
+            // ShotPending'te kalirsa sonraki adim hicbir dala girmez ve motor
+            // "ilerleme yok" agina takilir.
+            _state = _state with
+            {
+                PendingShot = null,
+                Phase = MatchPhase.LiveBall,
+            };
+
+            if (freeThrowCount > 0)
+            {
+                StartFreeThrowSeries(offense, pending, freeThrowCount, fieldGoalWasCounted: isMade && countsAsFieldGoalAttempt);
                 return;
             }
 
-            Emit(
-                MatchEventType.ShotMissed,
-                new ShotMissedPayload(shotId, selection.ShotType, CountsAsFieldGoalAttempt: true),
-                possessionId: _state.Possession!.PossessionId,
-                actionId: actionId,
-                teamId: offense,
-                playerId: shooterId,
-                secondaryPlayerId: null);
+            if (isMade)
+            {
+                // Faul olsa bile sayı işlenir: isabetli non-shooting faulde de
+                // basket sayılır, sadece topun gidişi değişir.
+                EndPossession(PossessionEndReason.Scored);
+                HandleAfterPossession(offense);
+                return;
+            }
 
             if (_state.Clock.IsGameTimeExhausted)
             {
-                // Periyot bitti: 06 §5, periyot sonunda ribaund üretilmez.
+                // Periyot bitti: 06 §5, periyot sonunda ribaund uretilmez.
                 EndPossession(PossessionEndReason.PeriodExpired);
                 ClosePeriod();
                 return;
             }
 
-            ResolveRebound(offense, shotId, actionId);
+            // Kacan sut. Non-shooting faul olsa bile top canlidir: ribaund firsati
+            // vardir (06 §5, "her missed attempt'e otomatik oyuncu ribaundu
+            // dagitma" kurali bu yolu degil, fazla ribaund'u yasaklar).
+            ResolveRebound(offense, pending);
         }
 
-        private void ResolveRebound(TeamSide offense, long shotId, long actionId)
+        // -------------------------------------------------------- serbest atislar
+
+        private void StartFreeThrowSeries(
+            TeamSide offense,
+            PendingShot pending,
+            int count,
+            bool fieldGoalWasCounted)
+        {
+            var seriesId = _state.NextFTSeriesId;
+
+            _state = _state with
+            {
+                NextFTSeriesId = seriesId + 1,
+                Phase = MatchPhase.FreeThrows,
+                PendingFrees = new PendingFreeThrowSeries
+                {
+                    FTSeriesId = seriesId,
+                    ShooterId = pending.ShooterId,
+                    Index = 0,
+                    Count = count,
+                    // Yalniz tek atislik seri (and-one) canlidir. 06 §91: "Son FT
+                    // miss'i yalniz top canliysa rebound uretir."
+                    FinalShotIsLive = count == 1,
+                    Offense = offense,
+                    PossessionId = _state.Possession!.PossessionId,
+                    FieldGoalWasCounted = fieldGoalWasCounted,
+                },
+            };
+        }
+
+        /// <summary>
+        /// Serbest atislar canli oyun suresi tuketmez (06 §2). Seri bittiginde top
+        /// gidisini bu adim belirler: canli son atis kactiyse ribaund yolu, degilse
+        /// rakip inbound.
+        /// </summary>
+        public void ResolveFreeThrow()
+        {
+            var series = _state.PendingFrees
+                ?? throw new InvalidOperationException("Bekleyen serbest atış serisi yok.");
+
+            var shooter = FindPlayer(series.ShooterId);
+            var isMade = _engine._freeThrowResolver.IsMade(shooter.Ratings.FreeThrow, _state.Random);
+            var isFinal = series.IsLast;
+
+            Emit(
+                MatchEventType.FreeThrowAttempt,
+                new FreeThrowAttemptPayload(series.FTSeriesId, series.Index, series.Count, isFinal),
+                possessionId: series.PossessionId,
+                actionId: null,
+                teamId: series.Offense,
+                playerId: series.ShooterId,
+                secondaryPlayerId: null);
+
+            if (isMade)
+            {
+                Emit(
+                    MatchEventType.FreeThrowMade,
+                    new FreeThrowMadePayload(series.FTSeriesId, series.Index, series.Count),
+                    possessionId: series.PossessionId,
+                    actionId: null,
+                    teamId: series.Offense,
+                    playerId: series.ShooterId,
+                    secondaryPlayerId: null);
+
+                _state = _state with
+                {
+                    HomeScore = series.Offense == TeamSide.Home ? _state.HomeScore + 1 : _state.HomeScore,
+                    AwayScore = series.Offense == TeamSide.Away ? _state.AwayScore + 1 : _state.AwayScore,
+                };
+            }
+            else
+            {
+                Emit(
+                    MatchEventType.FreeThrowMissed,
+                    new FreeThrowMissedPayload(
+                        series.FTSeriesId,
+                        series.Index,
+                        series.Count,
+                        BallIsLive: isFinal && series.FinalShotIsLive),
+                    possessionId: series.PossessionId,
+                    actionId: null,
+                    teamId: series.Offense,
+                    playerId: series.ShooterId,
+                    secondaryPlayerId: null);
+            }
+
+            if (!isFinal)
+            {
+                // Seri devam ediyor: FT arasi canli rebound YOK (06 §91).
+                _state = _state with { PendingFrees = series.WithIndex(series.Index + 1) };
+                return;
+            }
+
+            _state = _state with { PendingFrees = null, Phase = MatchPhase.LiveBall };
+
+            if (isFinal && series.FinalShotIsLive && !isMade)
+            {
+                if (_state.Clock.IsGameTimeExhausted)
+                {
+                    EndPossession(PossessionEndReason.PeriodExpired);
+                    ClosePeriod();
+                    return;
+                }
+
+                ResolveReboundAfterFreeThrow(series);
+                return;
+            }
+
+            // And-one sonrasi veya cok atislik seri sonrasi top rakibe gider.
+            EndPossession(PossessionEndReason.BonusFreeThrows);
+            HandleAfterPossession(series.Offense);
+        }
+
+        // ------------------------------------------------------------------ ribaund
+
+        private void ResolveRebound(TeamSide offense, PendingShot pending)
         {
             var attacking = _state.Team(offense);
             var rebound = _engine._reboundResolver.Resolve(attacking.OnCourt, _state.Random);
 
             Emit(
                 MatchEventType.Rebound,
-                new ReboundPayload(shotId, rebound.Offensive, IsTeamRebound: false),
+                new ReboundPayload(pending.ShotId, rebound.Offensive, IsTeamRebound: false),
                 possessionId: _state.Possession!.PossessionId,
-                actionId: actionId,
+                actionId: pending.ActionId,
                 teamId: offense,
                 playerId: rebound.RebounderId,
                 secondaryPlayerId: null);
 
             if (rebound.Offensive)
             {
-                // 06 §4: OREB possession'ı bitirmez; aynı kimlik devam eder (T05).
+                // 06 §4: OREB possession'i bitirmez; ayni kimlik devam eder (T05).
+                // 06 §6: hucre saati yalniz cembere degen miss'te 14 s'e iner.
+                _state = _state with
+                {
+                    Clock = _state.Clock with
+                    {
+                        ShotClockMs = ClockResetPolicy.ForOffensiveRebound(
+                            _engine._config.Rules,
+                            pending.RimContact) ?? _state.Clock.ShotClockMs,
+                    },
+                };
+
                 return;
             }
 
             EndPossession(PossessionEndReason.DefensiveRebound);
-            HandleClockAfterPossession(offense);
+            HandleAfterPossession(offense);
+        }
+
+        private void ResolveReboundAfterFreeThrow(PendingFreeThrowSeries series)
+        {
+            var offense = series.Offense;
+            var attacking = _state.Team(offense);
+            var rebound = _engine._reboundResolver.Resolve(attacking.OnCourt, _state.Random);
+
+            Emit(
+                MatchEventType.Rebound,
+                new ReboundPayload(ShotId: 0, rebound.Offensive, IsTeamRebound: false),
+                possessionId: series.PossessionId,
+                actionId: null,
+                teamId: offense,
+                playerId: rebound.RebounderId,
+                secondaryPlayerId: null);
+
+            if (rebound.Offensive)
+            {
+                // Canli son FT hucumda kaldi: ayni possession devam eder.
+                _state = _state with
+                {
+                    Clock = _state.Clock with
+                    {
+                        ShotClockMs = ClockResetPolicy.ForNewPossession(_engine._config.Rules),
+                    },
+                };
+
+                return;
+            }
+
+            EndPossession(PossessionEndReason.DefensiveRebound);
+            HandleAfterPossession(offense);
+        }
+
+        // -------------------------------------------------------------------- foul
+
+        /// <summary>
+        /// Suta donusmeyen bir aksiyonda faul. Bonuslu non-shooting faul serbest
+        /// atis uretir ve top rakibe gider; bonus yoksa hucre saati 14 s'e iner
+        /// ve possession korunur (06 §4, §89).
+        /// </summary>
+        private void StartFreeThrowSeriesWithoutShot(
+            TeamSide offense,
+            ActionSelection selection,
+            int count)
+        {
+            if (_state.Possession is null)
+            {
+                // Faul terminal duruma yol actiysa seri kurulamaz.
+                return;
+            }
+
+            var seriesId = _state.NextFTSeriesId;
+
+            _state = _state with
+            {
+                NextFTSeriesId = seriesId + 1,
+                Phase = MatchPhase.FreeThrows,
+                PendingFrees = new PendingFreeThrowSeries
+                {
+                    FTSeriesId = seriesId,
+                    ShooterId = selection.PlayerId,
+                    Index = 0,
+                    Count = count,
+                    FinalShotIsLive = false,
+                    Offense = offense,
+                    PossessionId = _state.Possession!.PossessionId,
+                    FieldGoalWasCounted = false,
+                },
+            };
         }
 
         /// <summary>
-        /// İsabetli şut için asist atfedilir. Asist, sahadaki başka bir oyuncudan
-        /// <c>Passing + 1</c> ağırlığıyla seçilir.
-        ///
-        /// Bu ayrı bir RNG çağrısıdır ve çağrı sırası sabittir. Burada rastgele
-        /// "asist yok" kararı verilmez: M2'de her isabetli şutta bir asist atfedilir.
-        /// Gelecekte asist opsiyonelliği eklenirse bu, açık bir olasılık olur.
+        /// Faul kaydini yazar, sayacları günceller ve gerekirse foul-out uygular.
+        /// Foul-out sonrası yedekleme D41'in parçasıdır; yasal yedek yoksa
+        /// terminal policy devreye girer.
         /// </summary>
-        private Guid? SelectAssister(TeamSide offense, Guid shooterId)
+        private void ApplyFoul(
+            TeamSide offense,
+            long foulId,
+            Guid foulerId,
+            FoulType type,
+            int freeThrowCount,
+            Guid? fouledPlayerId = null,
+            long? actionId = null)
         {
-            var candidates = _state.Team(offense)
-                .OnCourt.Where(player => player.Id != shooterId)
-                .ToList();
+            _state = _state with { NextFoulId = foulId + 1 };
 
-            if (candidates.Count == 0)
+            // Faul, ait oldugu aksiyonla ayni sinirda yayinlanir; boylece tuketici
+            // bir faulu ilgili suta (ShotAttempt) actionId uzerinden baglayabilir.
+            // 07 §2 bunu ayrica istemiyor ama korelasyon olmadan payload'daki
+            // FreeThrowCount hangi atis oldugunu tespit ettirmez.
+            Emit(
+                MatchEventType.Foul,
+                new FoulPayload(foulId, type, freeThrowCount),
+                possessionId: _state.Possession?.PossessionId,
+                actionId: actionId,
+                teamId: type == FoulType.Offensive ? offense : offense.Opponent(),
+                playerId: foulerId,
+                secondaryPlayerId: fouledPlayerId);
+
+            // Kisisel faul sayaci faulu eden oyuncunun takiminda artar.
+            var foulingSide = type == FoulType.Offensive ? offense : offense.Opponent();
+
+            UpdateTeam(foulingSide, team => team.WithFouls(team.Fouls.WithPersonalFoul(foulerId)));
+
+            if (type != FoulType.Offensive)
             {
-                return null;
+                // Takim faul sayaci yalniz savunma faulunde artar (06 §88).
+                UpdateTeam(foulingSide, team => team.WithFouls(team.Fouls.WithTeamFoulThisPeriod()));
             }
 
-            return WeightedSelector.Select(
-                candidates,
-                player => player.Ratings.Passing + 1.0,
-                _state.Random).Id;
+            var fouls = _state.Team(foulingSide).Fouls;
+
+            if (!EligibilityPolicy.IsFouledOut(
+                    fouls,
+                    foulerId,
+                    _engine._config.Fouls.PersonalFoulLimit))
+            {
+                return;
+            }
+
+            var marked = _state.Team(foulingSide).MarkFoulOut(foulerId);
+            _state = ReplaceTeam(foulingSide, marked);
+
+            // Foul-out oyuncuyu sahadan cikarir ve yedekleme zorunludur (D41).
+            if (_state.Team(foulingSide).OnCourt.Any(player => player.Id == foulerId))
+            {
+                var onCourt = _state.Team(foulingSide).OnCourt
+                    .Where(player => player.Id != foulerId)
+                    .ToImmutableArray();
+
+                _state = ReplaceTeam(foulingSide, _state.Team(foulingSide).WithOnCourt(onCourt));
+                ApplyReplacement(foulingSide);
+            }
         }
 
-        private void RecordTurnover(TeamSide offense, Guid playerId, long actionId, TurnoverKind kind)
+        /// <summary>Foul-out yedeklemesi (D41).</summary>
+        private void ApplyReplacement(TeamSide side)
         {
-            var turnoverId = _state.NextTurnoverId;
+            var team = _state.Team(side);
+            var replacement = EligibilityPolicy.SelectReplacement(team);
 
-            _state = _state with { NextTurnoverId = turnoverId + 1 };
+            if (replacement is null)
+            {
+                // D43: motor forfeit kazanani uydurmaz. Terminal policy acikca raporlanir.
+                Abort("Yasal yedek yok (NoLegalSubstitute). Mac tamamlanmadi; kazanan secilmedi.");
+                return;
+            }
 
-            Emit(
-                MatchEventType.Turnover,
-                new TurnoverPayload(turnoverId, kind),
-                possessionId: _state.Possession!.PossessionId,
-                actionId: actionId,
-                teamId: offense,
-                playerId: playerId,
-                secondaryPlayerId: null);
+            // Cikan oyuncu once sahadan kaldirilir; yedek eklenerek sahadaki bes
+            // kişi YENIDEN TAMAMLANIR. Kesme/sinirlama, foul-out'lar biriktikce
+            // sahadaki sayiyi azaltir ve motor "sahada oyuncu yok" ile durur.
+            var onCourt = team.OnCourt.Append(replacement).ToImmutableArray();
+
+            _state = ReplaceTeam(side, team.WithOnCourt(onCourt));
         }
+
+        // ---------------------------------------------------------------- possession
 
         private void StartPossession(TeamSide offense)
         {
             var possessionId = _state.PossessionCount + 1;
 
-            // 06 §6: yeni hücum 24 saniyelik hücum saatiyle başlar. OREB bu
-            // sıfırlamayı YAPMAZ — hücum kimliği korunur ve kalan süre devreder.
-            // Saat sıfırlanmazsa ilk hücumu tüketen saat sonraki her hücumu anında
-            // ihlal ettirir.
+            // 06 §6: yeni hucremus 24 saniyelik hucre saatiyle baslar. OREB bu
+            // sifirlamayi YAPMAZ; hucrem kimligi korunur ve kalan sure devreder.
             _state = _state with
             {
                 Clock = _state.Clock with
                 {
-                    ShotClockMs = _engine._config.Rules.ShotClockMs,
+                    ShotClockMs = ClockResetPolicy.ForNewPossession(_engine._config.Rules),
                 },
                 PossessionCount = possessionId,
                 Possession = new PossessionState
@@ -595,15 +1170,19 @@ public sealed class MatchSimulation
                 playerId: null,
                 secondaryPlayerId: null);
 
-            _state = _state with
-            {
-                Possession = null,
-                Phase = _state.Phase == MatchPhase.LiveBall ? MatchPhase.DeadBall : _state.Phase,
-            };
+            _state = _state with { Possession = null };
         }
 
-        /// <summary>Possession kapandıktan sonra periyot/terminal durumu ele alır.</summary>
-        private void HandleClockAfterPossession(TeamSide previousOffense)
+        private void EndPossessionIfOpen(PossessionEndReason reason)
+        {
+            if (_state.Possession is not null)
+            {
+                EndPossession(reason);
+            }
+        }
+
+        /// <summary>Possession kapandiktan sonra periyot/terminal durumu ele alir.</summary>
+        private void HandleAfterPossession(TeamSide previousOffense)
         {
             if (_state.Clock.IsGameTimeExhausted)
             {
@@ -619,55 +1198,100 @@ public sealed class MatchSimulation
 
             if (_state.Possession is null)
             {
-                // 06 §4: topu devreden taraf yeni hücumu başlatır. Devir, canlı
-                // süre tüketmez; bu yüzden state'e DeadBall yazılmadan bir sonraki
-                // possession doğrudan başlar.
+                // 06 §4: topu devreden taraf yeni hucremu baslatir. Devir, canli
+                // sure tuketmez; bu yuzden state'e DeadBall yazilmadan bir sonraki
+                // possession dogrudan baslar.
                 _state = _state with { Phase = MatchPhase.LiveBall };
                 StartPossession(previousOffense.Opponent());
             }
         }
 
-        private void EndPossessionIfOpen(PossessionEndReason reason)
+        private void ResetShotClockForDefensiveFoul(TeamSide offense)
         {
-            if (_state.Possession is not null)
+            var rules = _engine._config.Rules;
+
+            _state = _state with
             {
-                EndPossession(reason);
-            }
+                Clock = _state.Clock with
+                {
+                    ShotClockMs = ClockResetPolicy.ForDefensiveNonShootingFoul(
+                        rules,
+                        _state.Clock.ShotClockMs),
+                },
+            };
         }
 
-        private void ClosePeriod()
+        // ------------------------------------------------------------------ secimler
+
+        private Guid PickDefender(TeamSide offense)
         {
-            if (_state.Clock.IsGameTimeExhausted)
+            var defenders = _state.Team(offense.Opponent()).OnCourt;
+
+            if (defenders.IsDefaultOrEmpty)
             {
-                EndPossessionIfOpen(PossessionEndReason.PeriodExpired);
+                throw new InvalidOperationException("Savunma sahada oyuncu yok.");
             }
+
+            return WeightedSelector.Select(
+                defenders,
+                player => player.Ratings.Block + 1.0,
+                _state.Random).Id;
+        }
+
+        private Guid? SelectAssister(TeamSide offense, Guid shooterId)
+        {
+            var candidates = _state.Team(offense)
+                .OnCourt.Where(player => player.Id != shooterId)
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            return WeightedSelector.Select(
+                candidates,
+                player => player.Ratings.Passing + 1.0,
+                _state.Random).Id;
+        }
+
+        private Player FindPlayer(Guid playerId)
+        {
+            foreach (var player in _state.Home.Roster)
+            {
+                if (player.Id == playerId)
+                {
+                    return player;
+                }
+            }
+
+            foreach (var player in _state.Away.Roster)
+            {
+                if (player.Id == playerId)
+                {
+                    return player;
+                }
+            }
+
+            throw new InvalidOperationException($"Oyuncu kadrolarda bulunamadi: {playerId}");
+        }
+
+        // ---------------------------------------------------------------- yardimci
+
+        private void RecordTurnover(TeamSide offense, Guid playerId, long actionId, TurnoverKind kind)
+        {
+            var turnoverId = _state.NextTurnoverId;
+
+            _state = _state with { NextTurnoverId = turnoverId + 1 };
 
             Emit(
-                MatchEventType.PeriodEnded,
-                new PeriodEndedPayload(_state.Clock.Period, IsOvertime: false),
-                possessionId: null,
-                actionId: null,
-                teamId: null,
-                playerId: null,
+                MatchEventType.Turnover,
+                new TurnoverPayload(turnoverId, kind),
+                possessionId: _state.Possession!.PossessionId,
+                actionId: actionId,
+                teamId: offense,
+                playerId: playerId,
                 secondaryPlayerId: null);
-
-            if (_state.Clock.Period >= _engine._config.Rules.PeriodCount)
-            {
-                // M2'de uzatma yoktur. Eşitlikte kazanan seçilmez (06 §8).
-                _state = _state with { Phase = MatchPhase.Completed };
-
-                Emit(
-                    MatchEventType.MatchEnded,
-                    new MatchEndedPayload(_state.HomeScore, _state.AwayScore, _state.HomeScore == _state.AwayScore),
-                    possessionId: null,
-                    actionId: null,
-                    teamId: null,
-                    playerId: null,
-                    secondaryPlayerId: null);
-                return;
-            }
-
-            _state = _state with { Phase = MatchPhase.PeriodBreak };
         }
 
         private void Abort(string reason)
@@ -675,6 +1299,8 @@ public sealed class MatchSimulation
             _state = _state with
             {
                 Possession = null,
+                PendingShot = null,
+                PendingFrees = null,
                 Phase = MatchPhase.Aborted,
             };
 
@@ -688,13 +1314,13 @@ public sealed class MatchSimulation
                 secondaryPlayerId: null);
         }
 
-        /// <summary>
-        /// Periyot açılışını belirler (D32). Tek bir bit çekilir: modulo bias yoktur
-        /// ve aynı seed aynı başlangıcı verir. 06 §4, home/away bias yaratmayacak
-        /// seeded yöntem ister; toplu denge M6'nın işidir.
-        /// </summary>
-        private TeamSide DrawStarterSide() =>
-            (_state.Random.NextUInt64() & 1UL) == 0UL ? TeamSide.Home : TeamSide.Away;
+        private void UpdateTeam(TeamSide side, Func<TeamMatchState, TeamMatchState> update) =>
+            _state = ReplaceTeam(side, update(_state.Team(side)));
+
+        private MatchState ReplaceTeam(TeamSide side, TeamMatchState team) =>
+            side == TeamSide.Home
+                ? _state with { Home = team }
+                : _state with { Away = team };
 
         private void Emit(
             MatchEventType type,
@@ -728,4 +1354,3 @@ public sealed class MatchSimulation
         }
     }
 }
-

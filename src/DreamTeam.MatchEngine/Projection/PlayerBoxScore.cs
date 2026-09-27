@@ -37,6 +37,18 @@ public sealed record PlayerBoxScore
 
     public int Turnovers { get; init; }
 
+    /// <summary>M3: kisisel faul sayisi. FGA sayaci uzerinde etkisi yoktur.</summary>
+    public int PersonalFouls { get; init; }
+
+    /// <summary>M3: atilan serbest atis.</summary>
+    public int FreeThrowAttempts { get; init; }
+
+    /// <summary>M3: isabetli serbest atis.</summary>
+    public int FreeThrowMakes { get; init; }
+
+    /// <summary>M3: blok.</summary>
+    public int Blocks { get; init; }
+
     public int OffensiveRebounds { get; init; }
 
     public int DefensiveRebounds { get; init; }
@@ -75,6 +87,18 @@ public sealed record TeamBoxScore
     public int Assists { get; init; }
 
     public int Turnovers { get; init; }
+
+    /// <summary>M3: kisisel faul sayisi. FGA sayaci uzerinde etkisi yoktur.</summary>
+    public int PersonalFouls { get; init; }
+
+    /// <summary>M3: atilan serbest atis.</summary>
+    public int FreeThrowAttempts { get; init; }
+
+    /// <summary>M3: isabetli serbest atis.</summary>
+    public int FreeThrowMakes { get; init; }
+
+    /// <summary>M3: blok.</summary>
+    public int Blocks { get; init; }
 
     public int OffensiveRebounds { get; init; }
 

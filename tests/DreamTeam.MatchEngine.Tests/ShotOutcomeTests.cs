@@ -25,31 +25,47 @@ public class ShotOutcomeTests
             var payload = shot.PayloadAs<ShotMadePayload>();
 
             Assert.Equal(ShotResolver.PointsFor(payload.ShotType), payload.Points);
-            Assert.True(payload.CountsAsFieldGoalAttempt);
             Assert.NotNull(shot.TeamId);
             Assert.NotNull(shot.PlayerId);
         }
     }
 
     [Fact]
-    public void MissedShotAwardsNoPoints()
+    public void MissedShotAwardsNoFieldGoalPoints()
     {
-        var result = Run();
-        var missed = result.Events.Where(e => e.Type == MatchEventType.ShotMissed).ToList();
+        // Tek mac'a baglanmaz: belirli bir seed'de hic kacan sut olmayabilir.
+        // Kural bir macin ozelligi degil, tum akisin ozelligidir.
+        var missed = 0;
 
-        Assert.NotEmpty(missed);
-
-        foreach (var shot in missed)
+        foreach (var seed in new ulong[] { 1, 2, 3, 12_345, 99, 4_242, 777_777 })
         {
-            Assert.True(shot.PayloadAs<ShotMissedPayload>().CountsAsFieldGoalAttempt);
+            var result = Run(seed);
+
+            var misses = result.Events.Where(e => e.Type == MatchEventType.ShotMissed).ToList();
+            missed += misses.Count;
+
+            foreach (var shot in misses)
+            {
+                // 06 §87: kacan SHOOTING FAUL'lu deneme FGA sayilmaz; bayrak her
+                // zaman true degildir.
+                if (FoulIdFor(result.Events, shot) != 0)
+                {
+                    Assert.False(shot.PayloadAs<ShotMissedPayload>().CountsAsFieldGoalAttempt);
+                }
+            }
+
+            // Kacan sut puan uretmez. Toplam skor yalniz isabetli sut ve serbest
+            // atislardan gelir; 08 §2: PTS = 2*2PM + 3*3PM + FTM.
+            var fieldGoalPoints = result.Events
+                .Where(e => e.Type == MatchEventType.ShotMade)
+                .Sum(e => e.PayloadAs<ShotMadePayload>().Points);
+
+            var freeThrowPoints = result.Events.Count(e => e.Type == MatchEventType.FreeThrowMade);
+
+            Assert.Equal(result.HomeScore + result.AwayScore, fieldGoalPoints + freeThrowPoints);
         }
 
-        // Kaçan şutun puanı yoktur: toplam skor yalnız isabetli şutlardan gelir.
-        var totalPoints = result.Events
-            .Where(e => e.Type == MatchEventType.ShotMade)
-            .Sum(e => e.PayloadAs<ShotMadePayload>().Points);
-
-        Assert.Equal(result.HomeScore + result.AwayScore, totalPoints);
+        Assert.True(missed > 0, "Yedi seed'de hic kacan sut yok; test degerini yitirmisti.");
     }
 
     [Fact]
@@ -126,11 +142,15 @@ public class ShotOutcomeTests
 
             var homeFromEvents = result.Events
                 .Where(e => e.Type == MatchEventType.ShotMade && e.TeamId == TeamSide.Home)
-                .Sum(e => e.PayloadAs<ShotMadePayload>().Points);
+                .Sum(e => e.PayloadAs<ShotMadePayload>().Points)
+                + result.Events.Count(
+                    e => e.Type == MatchEventType.FreeThrowMade && e.TeamId == TeamSide.Home);
 
             var awayFromEvents = result.Events
                 .Where(e => e.Type == MatchEventType.ShotMade && e.TeamId == TeamSide.Away)
-                .Sum(e => e.PayloadAs<ShotMadePayload>().Points);
+                .Sum(e => e.PayloadAs<ShotMadePayload>().Points)
+                + result.Events.Count(
+                    e => e.Type == MatchEventType.FreeThrowMade && e.TeamId == TeamSide.Away);
 
             Assert.Equal(result.HomeScore, homeFromEvents);
             Assert.Equal(result.AwayScore, awayFromEvents);
@@ -196,8 +216,28 @@ public class ShotOutcomeTests
             $"Güçlü kadro geride kaldı: {strongTotal} - {weakTotal} (60 seed).");
     }
 
-    private static TeamSide SideOf(MatchSetup setup, Guid playerId)
+    /// <summary>
+    /// Verilen sutun birlikte calan faul kimligi; yoksa 0. Faul event'i ayni
+    /// aksiyonla yayinlandigi icin (M3) korelasyon actionId uzerinden yapilir.
+    /// </summary>
+    private static long FoulIdFor(IReadOnlyList<MatchEvent> events, MatchEvent miss)
     {
+        var attempt = events.FirstOrDefault(e =>
+            e.Type == MatchEventType.ShotAttempt
+            && e.PayloadAs<ShotAttemptPayload>().ShotId == miss.PayloadAs<ShotMissedPayload>().ShotId);
+
+        if (attempt is null)
+        {
+            return 0;
+        }
+
+        var foul = events.FirstOrDefault(e =>
+            e.Type == MatchEventType.Foul && e.ActionId == attempt.ActionId);
+
+        return foul is null ? 0 : foul.PayloadAs<FoulPayload>().FoulId;
+    }
+
+    private static TeamSide SideOf(MatchSetup setup, Guid playerId)    {
         if (setup.HomeLineup.PlayerIds.Contains(playerId))
         {
             return TeamSide.Home;

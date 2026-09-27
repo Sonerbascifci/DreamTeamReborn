@@ -47,6 +47,77 @@ public enum TurnoverKind
 }
 
 /// <summary>
+/// Faul türü. 04_DOMAIN_AND_DATA_MODEL.md sözlüğü. Teknik ve flagrant faul
+/// v0.1 dışındadır (06 §1 "İleri kural istisnaları").
+/// </summary>
+public enum FoulType
+{
+    Shooting,
+    NonShooting,
+    Offensive,
+}
+
+/// <summary>
+/// Faul kuralları. 06 §1'in basit profili (D40):
+/// periyot içinde 5. sayılan savunma faulünden itibaren 2 FT, kişisel sınır 6.
+///
+/// Bu bir **sade** profildir. NBA'nın 3 saniye kuralı, son iki dakika
+/// istisnaları ve frontcourt/backcourt ayrımı kapsam dışıdır; tam NBA
+/// sadakati iddiası taşımaz.
+/// </summary>
+public sealed record FoulModel
+{
+    /// <summary>Bir aksiyon başına faul olma olasılığı. Kalibre edilmemiş.</summary>
+    public required double FoulProbabilityPerAction { get; init; }
+
+    /// <summary>Fauller içinde hücum faulü payı. Kalibre edilmemiş.</summary>
+    public required double OffensiveFoulShare { get; init; }
+
+    /// <summary>Savunma faulleri içinde shooting faulü payı. Kalibre edilmemiş.</summary>
+    public required double ShootingFoulShare { get; init; }
+
+    /// <summary>Bu sayıdan sonraki savunma faulü bonusa girer (D40: 5).</summary>
+    public required int BonusTeamFoulThreshold { get; init; }
+
+    /// <summary>Bonus serbest atışı sayısı (D40: 2).</summary>
+    public required int BonusFreeThrowCount { get; init; }
+
+    /// <summary>Kişisel faul sınırı; bu sayıda oyuncu sahadan çıkar (D40: 6).</summary>
+    public required int PersonalFoulLimit { get; init; }
+
+    public static FoulModel Baseline { get; } = new()
+    {
+        // Bu deger, 400 aksiyonluk bir mac takim basina ~18 savunma faulu
+        // uretecek sekilde secildi. KALIBRE EDILMEMISTIR; hedef araligi M6
+        // olcumune aittir.
+        FoulProbabilityPerAction = 0.12,
+        OffensiveFoulShare = 0.25,
+        ShootingFoulShare = 0.45,
+        BonusTeamFoulThreshold = 5,
+        BonusFreeThrowCount = 2,
+        PersonalFoulLimit = 6,
+    };
+}
+
+/// <summary>
+/// Serbest atış isabet modeli. M2'de FT kuralı yoktu; burada taban olasılık
+/// oyuncu FreeThrow attribute'ünden okunur. Kalibre edilmemiştir.
+/// </summary>
+public sealed record FreeThrowModel
+{
+    public required double BaseMakeProbability { get; init; }
+
+    public required double SkillScale { get; init; }
+
+    public static FreeThrowModel Baseline { get; } = new()
+    {
+        BaseMakeProbability = 0.78,
+        SkillScale = 0.8,
+    };
+}
+
+
+/// <summary>
 /// Saat ve periyot kuralları. 06_RULES_AND_STATE_MACHINE.md §1'deki sade profil
 /// (D31). Tam NBA sadakati iddiası taşımaz: bonus, foul-out ve timeout yoktur.
 /// </summary>
@@ -61,12 +132,20 @@ public sealed record RulesProfile
     /// <summary>M3'te uzatmayı açacak. M2'de tanımlı ama kullanılmaz.</summary>
     public required long OvertimeDurationMs { get; init; }
 
+    /// <summary>
+    /// Hucre ribaundu sonrasi hucre saati (06 section 6, D31 profili). Yalnizca
+    /// cembere degen miss icin uygulanir; cembere degmeyen miss'te otomatik
+    /// reset yok.
+    /// </summary>
+    public required long OffensiveReboundShotClockMs { get; init; }
+
     public static RulesProfile SimpleNbaInspired { get; } = new()
     {
         PeriodCount = 4,
         PeriodDurationMs = 12 * 60 * 1000,
         ShotClockMs = 24 * 1000,
         OvertimeDurationMs = 5 * 60 * 1000,
+        OffensiveReboundShotClockMs = 14 * 1000,
     };
 }
 
@@ -91,6 +170,18 @@ public sealed record ShotModel
     /// <summary>Ham rating ile logit arasındaki ölçek. Kalibre edilmemiş.</summary>
     public required double SkillScale { get; init; }
 
+    /// <summary>
+    /// Şutun bloke edilme olasılığı (05 §8 adım 4, T04). Blok aynı şuta bağlıdır
+    /// ve ikinci bir FGA yazmaz (07 §3). Kalibre edilmemiş.
+    /// </summary>
+    public required double BlockProbability { get; init; }
+
+    /// <summary>
+    /// Şutun çembere değme olasılığı. 06 §6'ya göre yalnız çembere değen miss
+    /// sonrası hücum ribaundu hücum saatini 14 saniyeye çeker. Kalibre edilmemiş.
+    /// </summary>
+    public required double RimContactProbability { get; init; }
+
     public double BaseFor(ShotType shotType) => shotType switch
     {
         ShotType.AtRim => AtRimBase,
@@ -109,6 +200,8 @@ public sealed record ShotModel
         MidRangeBase = 0.415,
         ThreePointBase = 0.36,
         SkillScale = 0.6,
+        BlockProbability = 0.06,
+        RimContactProbability = 0.70,
     };
 }
 
@@ -231,6 +324,12 @@ public sealed record EngineConfig
 
     public required ActionModel Actions { get; init; }
 
+    /// <summary>M3'te eklendi: faul, bonus ve foul-out kuralları (D40).</summary>
+    public required FoulModel Fouls { get; init; }
+
+    /// <summary>M3'te eklendi: serbest atış isabet modeli.</summary>
+    public required FreeThrowModel FreeThrows { get; init; }
+
     public required ImmutableArray<ActionProfile> ActionProfiles { get; init; }
 
     /// <summary>
@@ -244,6 +343,8 @@ public sealed record EngineConfig
         Rules = RulesProfile.SimpleNbaInspired,
         Shot = ShotModel.Baseline,
         Actions = ActionModel.Baseline,
+        Fouls = FoulModel.Baseline,
+        FreeThrows = FreeThrowModel.Baseline,
         ActionProfiles = ActionProfile.Baseline,
         MaxActionsPerMatch = 20_000,
     };
@@ -268,18 +369,31 @@ public sealed record EngineConfig
         Append("periodDurationMs", Rules.PeriodDurationMs);
         Append("shotClockMs", Rules.ShotClockMs);
         Append("overtimeDurationMs", Rules.OvertimeDurationMs);
+        Append("offensiveReboundShotClockMs", Rules.OffensiveReboundShotClockMs);
 
         AppendReal("atRimBase", Shot.AtRimBase);
         AppendReal("closePostBase", Shot.ClosePostBase);
         AppendReal("midRangeBase", Shot.MidRangeBase);
         AppendReal("threePointBase", Shot.ThreePointBase);
         AppendReal("skillScale", Shot.SkillScale);
+        AppendReal("blockProbability", Shot.BlockProbability);
+        AppendReal("rimContactProbability", Shot.RimContactProbability);
 
         Append("setupActionMs", Actions.SetupActionMs);
         Append("shotFlightMs", Actions.ShotFlightMs);
         AppendReal("shotCompletionProbability", Actions.ShotCompletionProbability);
         AppendReal("turnoverProbability", Actions.TurnoverProbability);
         AppendReal("offensiveReboundProbability", Actions.OffensiveReboundProbability);
+
+        AppendReal("foulProbabilityPerAction", Fouls.FoulProbabilityPerAction);
+        AppendReal("offensiveFoulShare", Fouls.OffensiveFoulShare);
+        AppendReal("shootingFoulShare", Fouls.ShootingFoulShare);
+        Append("bonusTeamFoulThreshold", Fouls.BonusTeamFoulThreshold);
+        Append("bonusFreeThrowCount", Fouls.BonusFreeThrowCount);
+        Append("personalFoulLimit", Fouls.PersonalFoulLimit);
+
+        AppendReal("freeThrowBaseMakeProbability", FreeThrows.BaseMakeProbability);
+        AppendReal("freeThrowSkillScale", FreeThrows.SkillScale);
 
         foreach (var profile in ActionProfiles)
         {

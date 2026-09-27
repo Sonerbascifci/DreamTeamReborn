@@ -28,6 +28,8 @@ internal static class M2TestData
         RulesProfile? rules = null,
         ShotModel? shot = null,
         ActionModel? actions = null,
+        FoulModel? fouls = null,
+        FreeThrowModel? freeThrows = null,
         ImmutableArray<ActionProfile>? actionProfiles = null,
         int? maxActionsPerMatch = null)
     {
@@ -36,6 +38,8 @@ internal static class M2TestData
             Rules = rules ?? RulesProfile.SimpleNbaInspired,
             Shot = shot ?? ShotModel.Baseline,
             Actions = actions ?? ActionModel.Baseline,
+            Fouls = fouls ?? FoulModel.Baseline,
+            FreeThrows = freeThrows ?? FreeThrowModel.Baseline,
             ActionProfiles = actionProfiles ?? ActionProfile.Baseline,
             MaxActionsPerMatch = maxActionsPerMatch ?? EngineConfig.Baseline.MaxActionsPerMatch,
         };

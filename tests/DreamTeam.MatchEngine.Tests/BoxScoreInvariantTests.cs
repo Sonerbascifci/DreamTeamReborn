@@ -13,8 +13,10 @@ public class BoxScoreInvariantTests
     private static readonly ulong[] Seeds = [1, 2, 3, 12_345, 99, 4_242, 777_777];
 
     [Fact]
-    public void ScoreEqualsTwoPointersPlusThreePointers()
+    public void ScoreEqualsTwoPointersPlusThreePointersPlusFreeThrows()
     {
+        // 08 §2: PTS = 2*2PM + 3*3PM + FTM. M3'te serbest atis puani ayrica
+        // sayildigi icin bu esitlik M2'den daha katidir.
         foreach (var seed in Seeds)
         {
             var result = Run(seed);
@@ -23,10 +25,34 @@ public class BoxScoreInvariantTests
 
             Assert.Equal(
                 home.Points,
-                (2 * home.TwoPointersMade) + (3 * home.ThreePointersMade));
+                (2 * home.TwoPointersMade) + (3 * home.ThreePointersMade) + home.FreeThrowMakes);
             Assert.Equal(
                 away.Points,
-                (2 * away.TwoPointersMade) + (3 * away.ThreePointersMade));
+                (2 * away.TwoPointersMade) + (3 * away.ThreePointersMade) + away.FreeThrowMakes);
+        }
+    }
+
+    [Fact]
+    public void FreeThrowCountersAreInternallyConsistent()
+    {
+        foreach (var seed in Seeds)
+        {
+            var result = Run(seed);
+
+            foreach (var box in result.BoxScores)
+            {
+                Assert.InRange(box.FreeThrowMakes, 0, box.FreeThrowAttempts);
+                Assert.True(box.PersonalFouls >= 0);
+                Assert.True(box.Blocks >= 0);
+            }
+
+            foreach (var player in result.PlayerBoxScores)
+            {
+                Assert.InRange(player.FreeThrowMakes, 0, player.FreeThrowAttempts);
+                Assert.Equal(
+                    player.Points,
+                    (2 * player.TwoPointersMade) + (3 * player.ThreePointersMade) + player.FreeThrowMakes);
+            }
         }
     }
 
@@ -53,23 +79,59 @@ public class BoxScoreInvariantTests
     }
 
     [Fact]
-    public void EveryLiveMissProducesReboundOpportunityExceptAtTheHorn()
+    public void EveryLiveMissLeadsToReboundOrFreeThrowSeriesOrHorn()
     {
-        // 06 section 5: a rebound is not distributed to a player automatically for
-        // every missed attempt, and at the end of a period no rebound is produced.
-        // In M2 the shot resolves synchronously, so every miss is a live rebound
-        // opportunity unless the game clock expired during the shot flight.
+        // 06 §5: her missed attempt'e oyuncu ribaundu dagitilmaz. Bir kacan sut
+        // uc yolla kapanir: canli ribaund, shooting foul -> serbest atis serisi,
+        // ya da duduk sonrasi periyot kapanisi. Ikisinden fazlasi bir eksiktir.
         foreach (var seed in Seeds)
         {
             var result = Run(seed);
-            var misses = result.Events.Where(e => e.Type == MatchEventType.ShotMissed).ToList();
-            var rebounds = result.Events.Count(e => e.Type == MatchEventType.Rebound);
-            var hornMisses = misses.Count(m => m.GameClockMs == 0);
+            var events = result.Events;
 
-            Assert.True(misses.Count > 0, "Test verisinde hic kacan sut yok; test degersizlesir.");
-            Assert.Equal(misses.Count - hornMisses, rebounds);
-            Assert.True(rebounds > 0, "Hic ribaund firsati olusmadi.");
+            foreach (var miss in events.Where(e => e.Type == MatchEventType.ShotMissed))
+            {
+                var shotId = miss.PayloadAs<ShotMissedPayload>().ShotId;
+                var foulId = FoulIdFor(events, shotId);
+
+                var nextAfterMiss = events.First(e => e.Sequence > miss.Sequence);
+                var horn = miss.GameClockMs == 0;
+
+                if (horn)
+                {
+                    Assert.NotEqual(MatchEventType.Rebound, nextAfterMiss.Type);
+                    continue;
+                }
+
+                if (foulId != 0)
+                {
+                    // Kacan shooting foul: ribaund yok, serbest atis var.
+                    Assert.NotEqual(MatchEventType.Rebound, nextAfterMiss.Type);
+                    continue;
+                }
+
+                Assert.Equal(MatchEventType.Rebound, nextAfterMiss.Type);
+                Assert.Equal(shotId, nextAfterMiss.PayloadAs<ReboundPayload>().ShotId);
+            }
         }
+    }
+
+    private static long FoulIdFor(IReadOnlyList<MatchEvent> events, long shotId)
+    {
+        var attempt = events.FirstOrDefault(e =>
+            e.Type == MatchEventType.ShotAttempt
+            && e.PayloadAs<ShotAttemptPayload>().ShotId == shotId);
+
+        if (attempt is null)
+        {
+            return 0;
+        }
+
+        // Faul, ShotAttempt'ten sonra ama settlement'tan once yazilir.
+        var foul = events.FirstOrDefault(e =>
+            e.Type == MatchEventType.Foul && e.ActionId == attempt.ActionId);
+
+        return foul is null ? 0 : foul.PayloadAs<FoulPayload>().FoulId;
     }
 
     [Fact]
@@ -105,9 +167,12 @@ public class BoxScoreInvariantTests
                 Assert.Equal(team.FieldGoalsMade, players.Sum(p => p.FieldGoalsMade));
                 Assert.Equal(team.FieldGoalsAttempted, players.Sum(p => p.FieldGoalsAttempted));
                 Assert.Equal(team.ThreePointersMade, players.Sum(p => p.ThreePointersMade));
-                Assert.Equal(team.ThreePointersAttempted, players.Sum(p => p.ThreePointersAttempted));
+                Assert.Equal(team.PersonalFouls, players.Sum(p => p.PersonalFouls));
+                Assert.Equal(team.FreeThrowAttempts, players.Sum(p => p.FreeThrowAttempts));
                 Assert.Equal(team.Assists, players.Sum(p => p.Assists));
                 Assert.Equal(team.Turnovers, players.Sum(p => p.Turnovers));
+                Assert.Equal(team.FreeThrowMakes, players.Sum(p => p.FreeThrowMakes));
+                Assert.Equal(team.Blocks, players.Sum(p => p.Blocks));
                 Assert.Equal(team.OffensiveRebounds, players.Sum(p => p.OffensiveRebounds));
                 Assert.Equal(team.DefensiveRebounds, players.Sum(p => p.DefensiveRebounds));
             }
@@ -115,42 +180,44 @@ public class BoxScoreInvariantTests
     }
 
     [Fact]
-    public void OnlyOnCourtPlayersAppearInTheBoxScore()
+    public void OnlyRosterPlayersAppearInTheBoxScore()
     {
+        // M3'te foul-out yedeklemesi kadro disi oyuncu sokmaz. Degisen sey
+        // "ilk bes" degil, sinir "kadro"dur: yedek oyuncular da istatistik alabilir.
         foreach (var seed in Seeds)
         {
             var setup = M2TestData.NeutralMirror(seed);
-            var onCourt = M2TestData.OnCourtIds(setup).ToHashSet();
+            var roster = setup.Home.Roster.Concat(setup.Away.Roster).Select(p => p.Id).ToHashSet();
             var result = Run(seed);
 
             foreach (var player in result.PlayerBoxScores)
             {
-                Assert.Contains(player.PlayerId, onCourt);
+                Assert.Contains(player.PlayerId, roster);
             }
         }
     }
 
     [Fact]
-    public void EveryEventAttributedToAPlayerWasOnCourt()
+    public void EveryEventAttributedToAPlayerIsInTheRoster()
     {
-        // M2'de substitution yoktur, bu yüzden sahadaki beş maç boyunca sabittir.
-        // Yanlış kimlik atfı bu testle yakalanır.
+        // M2'de sahadaki bes sabitti. M3'te foul-out yedeklemesi oyuncuyu
+        // degistirebilir; degismeyen sinir kadro mudur.
         foreach (var seed in Seeds)
         {
             var setup = M2TestData.NeutralMirror(seed);
-            var onCourt = M2TestData.OnCourtIds(setup).ToHashSet();
+            var roster = setup.Home.Roster.Concat(setup.Away.Roster).Select(p => p.Id).ToHashSet();
             var result = Run(seed);
 
             foreach (var matchEvent in result.Events)
             {
                 if (matchEvent.PlayerId is { } playerId)
                 {
-                    Assert.Contains(playerId, onCourt);
+                    Assert.Contains(playerId, roster);
                 }
 
                 if (matchEvent.SecondaryPlayerId is { } secondaryId)
                 {
-                    Assert.Contains(secondaryId, onCourt);
+                    Assert.Contains(secondaryId, roster);
                 }
             }
         }
