@@ -1,3 +1,4 @@
+using DreamTeam.MatchEngine.Commands;
 using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Core;
 
@@ -142,3 +143,80 @@ public sealed record FreeThrowMissedPayload(
     int Index,
     int Count,
     bool BallIsLive) : MatchEventPayload;
+
+// ================================================================ M5: mudahale
+
+/// <summary>
+/// M5 (D86): hucum taktigi degisti. 07 §2 "Müdahale" ailesi; CommandId
+/// takip icin payload'da tasinir (zarfin <c>actionId</c>'si kullanilamaz,
+/// cunku mudahale bir aksiyona ait degildir).
+/// </summary>
+public sealed record TacticChangedPayload(
+    Guid CommandId,
+    OffensiveTactic Previous,
+    OffensiveTactic Current) : MatchEventPayload;
+
+/// <summary>M5: savunma policy'si degisti.</summary>
+public sealed record DefenseChangedPayload(
+    Guid CommandId,
+    DefensiveTactic Previous,
+    DefensiveTactic Current) : MatchEventPayload;
+
+/// <summary>M5 (D59): tempo degisti.</summary>
+public sealed record PaceChangedPayload(
+    Guid CommandId,
+    Pace Previous,
+    Pace Current) : MatchEventPayload;
+
+/// <summary>
+/// M5 (D85): substitution. <b>Atomik</b> bes-bes gecistir (07 §3).
+///
+/// <para><c>Sequence</c> degismedigi icin bu iki oyuncu "sirayla degisti"
+/// gibi yorumlanamaz; tek bir gecis olarak okunur.</para>
+/// </summary>
+public sealed record SubstitutionPayload(
+    Guid CommandId,
+    Guid IncomingPlayerId,
+    Guid OutgoingPlayerId) : MatchEventPayload;
+
+/// <summary>
+/// M5 (D84): timeout alindi.
+///
+/// <para><b>Canli saati tuketmez</b> (06 §27) ve <b>hucrem saatini baslatmaz</b>
+/// (06 §6). Payload bunu belirtmez cunku etkisi zaten yoktur; testler
+/// saatin degismedigini dogrular.</para>
+///
+/// <para><c>FullUsed</c>/<c>ShortUsed</c> sayaçlar bu olaydan SONRAki
+/// degerleri tasir, boylece istemci bultutu gondermeden bilesin.</para>
+/// </summary>
+public sealed record TimeoutPayload(
+    Guid CommandId,
+    TimeoutKind Kind,
+    int FullUsed,
+    int ShortUsed) : MatchEventPayload;
+
+// ========================================================== M5: komut sonucu
+
+/// <summary>
+/// M5: komut state'e islendi (07 §5 "Applied = state'e islendi").
+///
+/// <para>Bu, ACK DEGILDIR. ACK ("alindi/kuyruga girdi") yalnizca kuyruga
+/// giris anindadir ve domain event degildir; replay gerektirmez.</para>
+/// </summary>
+public sealed record CommandAppliedPayload(
+    Guid CommandId,
+    ManagerCommandKind Kind,
+    CommandBoundary Boundary,
+    long AcceptedOrder) : MatchEventPayload;
+
+/// <summary>
+/// M5: komut reddedildi. Sebep kodu kaydedilir (07 §5).
+///
+/// <para><b>Reddetme maci bitirmez.</b> Yonetici hata yaptiginda mac devam
+/// eder; yalniz sonuc raporlanir.</para>
+/// </summary>
+public sealed record CommandRejectedPayload(
+    Guid CommandId,
+    ManagerCommandKind Kind,
+    CommandRejectionReason Reason,
+    string? Message) : MatchEventPayload;

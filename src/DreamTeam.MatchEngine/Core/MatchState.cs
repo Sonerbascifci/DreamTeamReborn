@@ -40,6 +40,19 @@ public sealed record MatchState
     /// <summary>M3: devam eden serbest atış serisi. M5'te serileştirilecektir.</summary>
     public required PendingFreeThrowSeries? PendingFrees { get; init; }
 
+    /// <summary>
+    /// M5: uygulanmamış yönetici komutları ve idempotency kaydı.
+    ///
+    /// <para><b>Neden <c>MatchState</c>'in parçası?</b> Uygulanamayan bir komut
+    /// bir sonraki mantıksal sınıra kadar korunmalıdır. Kuyruk yalnız
+    /// <c>Advance</c>'in parametresi olsaydı kaybolur ve replay bozulurdu. Bu
+    /// alan M5'te serileştirilir (T16).</para>
+    ///
+    /// <para><b>Komutlar RNG tüketmez</b>; bu alan determinizm sözleşmesini
+    /// bozmaz, yalnız hangi komutun ne zaman uygulanacağını belirler.</para>
+    /// </summary>
+    public required Commands.CommandQueue CommandQueue { get; init; }
+
     /// <summary>Bir sonraki event sequence'ı. 1'den başlar.</summary>
     public required long NextSequence { get; init; }
 

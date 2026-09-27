@@ -68,6 +68,19 @@ public sealed record TeamMatchState
     public required ImmutableArray<Guid> FoulOutPlayerIds { get; init; }
 
     /// <summary>
+    /// M5 (D84): kullanılmış **tam** timeout sayısı. Kümülatiftir; uzatma bonusu
+    /// bütçeyi büyütür, kullanılmış sayıyı silmez.
+    ///
+    /// <para><b>Ayrı alan, <c>FoulCounters</c>'ın parçası DEĞİL.</b> D55'in
+    /// "roster sınırı" disiplini: her sayaç tek bir soruyu yanıtlar. Faul
+    /// sayacı periyotta sıfırlanır, timeout sayacı maç boyunca birikir.</para>
+    /// </summary>
+    public int FullTimeoutsUsed { get; init; }
+
+    /// <summary>M5 (D83, D89): kullanılmış 20 saniyelik timeout sayısı.</summary>
+    public int ShortTimeoutsUsed { get; init; }
+
+    /// <summary>
     /// Sahada olmayan ve foul-out olmayan oyuncular: yedek havuzu (M5'in
     /// değişiklik adayları). Türetilmiştir; ayrı bir <c>Bench</c> alanı tutulmaz.
     /// </summary>

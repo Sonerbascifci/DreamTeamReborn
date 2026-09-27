@@ -1,8 +1,8 @@
 # M5 - Yönetici Müdahalesi ve Replay: Uygulama Planı
 
-> **Durum:** Onay bekliyor. Bu plan 27 Eylül 2026'da hazırlandı. Uygulama kodu
-> yazılmadı. §2'deki ölçümler bu oturumda gerçekten koşturuldu; §16 ve §17
-> uygulama sırasında doldurulacak.
+> **Durum:** Uygulandı ve doğrulandı (28 Eylül 2026). Aşağıdaki kabul tablosu
+> gerçek koşu sonuçlarıyla dolduruldu. Sapmalar §16'da, bulunan hatalar §17'de.
+> §2'deki ölçümler planlama oturumunda gerçekten koşturuldu.
 
 ## 0. Bu oturumda kilitlenen kararlar
 
@@ -11,11 +11,14 @@
 | **D79** | Uzatma üst sınırı **2** (toplam en fazla 6 periyot). Sınıra gelindiğinde hâlâ eşitse maç **`Aborted`** olur; kazanan uydurulmaz. Değer `RulesProfile`'a girer ve `ConfigHash`'e yazılır. | Kullanıcı kararı — **D78 kapatıldı** |
 | **D80** | **Clutch yok.** Motor son dakikalarda oyun davranışını değiştirmez. Timeout sayısı/penceresi ayrı konu. | Kullanıcı kararı |
 | **D81** | **AI fallback: motor yönetir.** Taktik/tempo/substitution kararlarını motor verir (mevcut `Balanced`/`ManToMan`/`Normal`); yönetici istediği anda müdahale eder, "devralma" modu yok. | Kullanıcı kararı — Q11 parçası |
-| **D82** | **Substitution penceresi: yalnız düdük sonrası dead-ball ve devre arası.** Normal basket sonrası pencere **açılmaz** (06 §7'de M5'e bırakılan karar). DREB/steal sonrası oyun canlıdır → pencere yok. | Kullanıcı kararı — 06 §7 kapandı |
+| **D82** | **Substitution penceresi: 5+1 nokta.** İsabetli basket, hücum değişimi (turnover/steal), serbest atış serisi sonu, hücum saati ihlali, düdük sonrası faul ve devre arası. **DREB/steal sonrası oyun canlıdır → pencere yok.** | Kullanıcı kararı — 06 §7 kapandı. **Uygulama sırasında netleştirildi:** soru etiketi "normal basket sonrası **açılmaz**" derken açıklaması isabetli basketi pencere sayıyordu. Kullanıcı açıklamayı onayladı: **pencere AÇILIR.** D96 |
 | **D83** | **20 saniyelik timeout'un tipi motorun bilir, süresi M7'nin.** `TimeoutKind.Full` ve `TimeoutKind.Short20` ikisi de sayaçtan düşer ve aynı mantıksal pencereyi açar; 20 saniyenin duvar saati süresi canlı runner'da yaşar. | Kullanıcı kararı |
 | **D84** | **Timeout: takım başına maçlık 4 tam, son 2'si yalnız düzenleme periyodunun son 2 dakikasında.** Uzatma başına **+1**. Timeout canlı saati tüketmez ve hücum saatini **başlatmaz** (06 §6). Uygulama yalnız dead-ball sınırında olur — NBA'daki canlı top anında çağırma kuralı **bilinçli sapma** olarak kaydedilir. | Kullanıcı kararı — **Q11 kapandı** |
 | **D85** | Substitution komutu **çıkan ve giren oyuncuyu açıkça adlandırır.** Motor "kimi çıkaracağım" tahmininde bulunmaz. Otomatik çıkarma yalnız foul-out yolunda vardır (M3, `EligibilityPolicy`). | Uygulama kararı — 07 §5'e göre |
 | **D86** | Bekleyen komut sırası **`AcceptedOrder` ile FIFO.** Aynı tip taktik komutlarında last-write-wins doğal olarak FIFO'dan çıkar; ikinci substitution ilk uygulanmış lineup'e karşı yeniden doğrulanır. Sessizce keyfî seçim yok (07 §6). | Uygulama kararı — 07 §6'yı karşılıyor |
+| **D87** | **`MatchStateFingerprint` yardımcısı eklenir; durum karşılaştırmaları `Assert.Equal` ile YAPILMAZ.** | Uygulama kararı — ölçülmüş hata | §2'de ölçüldü: `ImmutableArray<T>.Equals` referans eşitliğidir, bu yüzden `Team`/`TeamMatchSetup`/`MatchSetup`/`MatchState` için `record` üretici eşitliği bozuktur. T16 `Assert.Equal(state, restored)` ile **yazılamaz**: yanlış negatif *ve* yanlış pozitif verir. **M7'de kalıcı katmanda çözülmeli.** |
+| **D88** | Enum'lar **isim tabanlı** serileştirilir; `System.Text.Json` **sıfır paketle** kullanılır; `byte[]` hex olarak yazılır | Ölçüm + uygulama kararı | §2'de ölçüldü: sıfır paketle çalışıyor, `ImmutableArray<T>` round-trip'i doğru, ama enum varsayılan **sayısal** (`InsidePost` → `3`). Sayısal temsil, enum ordering'i bir kez değişse kayıtlı snapshot'ı **sessizce** bozar. |
+| **D89** | `ShortTimeoutsPerTeam = 3` — **KAYNAKTAN GELMİYOR**, yer tutucu | **Açık — onay bekliyor** | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama bu bir sayı uydurmak olurdu. `ConfigHash`'e girdiği için tek satır değişir. |
 
 ### Kaynaktan gelmeyen sayı — dürüst işaretleme
 
@@ -376,19 +379,43 @@ kılmak için bir diagnostics yüzeyi gerekir; bu yeni bir kapsam ve 05 §3'te
 yasaklanan "etkisiz mekanizmayı gizleme" riski taşır. **Sahte "geçti" konmayacak**;
 T15 M6'da. M5 yalnız not düşer.
 
-## 12. Kabul kriterleri
+## 12. Kabul kriterleri — gerçek koşu sonuçları
 
-| Kriter | Nasıl doğrulanır | Sonuç |
+| Kriter | Nasıl doğrulandı | Sonuç |
 |---|---|---|
-| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | (uygulamada) |
-| Tüm testler | `dotnet test -c Release` ve `-c Debug` | (uygulamada) |
-| Motor saf C# | `dotnet list package` → MatchEngine'da sıfır paket | Ölçüldü: `System.Text.Json` **paket gerektirmiyor**; yeniden doğrulanacak |
-| T13–T16 | Yukarıdaki 45 senaryo | (uygulamada) |
-| Determinism | Aynı komut listesi → SHA256 aynı | (uygulamada) |
-| Komutlar RNG tüketmez | `CommandsConsumeNoRng` | (uygulamada) |
-| Snapshot → aynı devam | T16, fingerprint ile | (uygulamada) |
+| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | **0 uyarı, 0 hata** |
+| Tüm testler geçti | `dotnet test -c Release` | **324/324** |
+| Tüm testler geçti (Debug) | `dotnet test -c Debug` | **324/324** |
+| Motor saf C# | `dotnet list package` (MatchEngine, Simulator) | **Sıfır paket** |
+| Motor yasaklı çağrı yok | `new Random` / `DateTime` / `Guid.NewGuid` / `Environment` / `Console` / `ILogger` / `File` / `Process` / `Sleep` taraması | **Temiz** (2 eşleşme `ShotMath.Logit`, yasaklı değil) |
+| Determinism | Simulator çıktısının SHA256'ı, iki ayrı koşu | `82239D3246F795D2…AA002C` — **iki koşuda aynı** |
+| T13 (substitution) | `SubstitutionTests` | **16 test** |
+| T14 (duplicate/stale/expired) | `CommandValidationTests` | **22 test** |
+| T16 (snapshot → aynı devam) | `SnapshotReplayTests` | **18 test**, fingerprint ile |
+| Komutlar RNG tüketmez | `AnInvalidCommandDoesNotAdvanceTheRng`, `AValidCommandConsumesNoRandomnessEither` | RNG state **birebir aynı** |
+| Aynı komut dizisi = aynı maç | `TheSameCommandListProducesTheSameMatch` | Event parmak izi aynı |
 | Sıfır sahte işaret | T15 yazılmadı, açıkça not düşüldü | — |
-| Karar günlüğü | D79–D87 eklendi | Bu oturumda |
+| Dondurulmuş sözleşmeler | `git diff` (`MatchClock`, `IRandomSource`, `SeededRandom`, `EngineIdentity`) | **Doğrulandı** |
+
+### Gözlenen tek maç (seed 20260927, **denge kanıtı değildir**)
+
+`112-118`, **5 periyot (uzatma)**, 3180.0 s, 237 possession.
+`ConfigHash` M4'te `b043cfa08c4baecf` idi, **M5'te `349032b31595c15b`**
+(D79 + D84 alanları hash'e girdi). Timeout: `Ev 0/5 tam, 0/4 20sn | Dep 0/5 tam, 0/4 20sn`.
+
+Bu argümansız koşuda **hiç komut gönderilmez** (D81: motor yönetir). Timeout
+satırı bütçenin görünürlüğü içindir; `5` = 4 tam + 1 uzatma bonusu, `4` = 3 + 1.
+
+### Geri regresyon kanıtı
+
+`TheSimulatorStillProducesTheSameResultWithoutCommands` — M5 hiçbir komut
+gönderilmediğinde M4'ün davranışı **korunur** (Completed, pozitif skor).
+
+### Test sayısı
+
+**223 → 324** (M1'den M5'e). Yeni: `M5TestData`, `CommandValidationTests` (22),
+`SubstitutionTests` (16), `TimeoutTests` (18), `SnapshotReplayTests` (18),
+`CommandDeterminismTests` (9), `ApplicationBoundaryTests` (13).
 
 ## 13. Bilinçli olarak yapılmayacaklar
 
@@ -427,3 +454,52 @@ komut listesiyle toplu koşu, ölçüm raporu, katsayı kalibrasyonu. T15
 **M7** (API/SignalR) M5'in komut sözleşmesini tüketir: `ExpectedSequence`,
 `AuthenticatedUserId`'nin bağlamdan çözülmesi, reconnect. Risk 2 (record
 eşitliği) M7'de çözülmeli.
+
+## 16. Uygulama sapmaları
+
+| # | Sapma | Neden |
+|---|---|---|
+| 1 | **`MatchEventType` 18 → 25** (plan "24 + 6" diyordu) | 7 yeni tür eklendi, 6 değil: `TacticChanged`, `DefenseChanged`, `PaceChanged`, `Substitution`, `Timeout`, `CommandApplied`, `CommandRejected`. Plan **sayım hatasıydı**; test gerçeği sabitler. D96 |
+| 2 | **`DefenseChanged` ayrı event olarak eklendi** (planda yalnız `TacticChanged` vardı) | 07 §2 "Müdahale" ailesi tek bir "TacticChanged" ile iki alanı kapsayamaz; savunma değişikliğinin önce/sonra değerleri de kaydedilmelidir. |
+| 3 | **`MatchSnapshot` → `MatchSnapshotData` DTO'ya ayrıldı** | `MatchState.Config.ActionProfiles[].Skill` bir `Func<>`'dur ve `System.Text.Json` ile **serileştirilemez**. Tüm `MatchState'i` doğrudan yazmak denendi ve derlendi ama çalışma zamanında patlar. Config bir **parametredir**, durum değildir; `ConfigHash` ile doğrulanır ve `Restore(config)` ile dışarıdan alınır. |
+| 4 | **`MatchState` doğrudan serileştirilmiyor** | Aynı neden. `IRandomSource` de arayüzdür; onun yerine `RandomState` (8 bayt hex) vardır. |
+| 5 | **`D82` yeniden netleştirildi: isabetli basket sonrası pencere AÇILIR** | Soru etiketi "normal basket sonrası açılmaz" derken açıklaması isabetli basketi pencere sayıyordu. Kullanıcı açıklamayı onayladı. D96 |
+| 6 | **`SelectForStep` kaldırıldı, `BoundariesFor` + `CurrentBoundary` kullanıldı** | İlk sürüm `pending.RemoveRange(0, n)` ile filtrelenmemiş listeden siliyordu; yanlış komutları atıp sonrakileri kaydırıyordu. D92 |
+| 7 | **M3 testi yeniden adlandırıldı ve bölündü** | `DegenerateZeroScoreMatchIsAbortedByTheGuard` artık yanlış adı taşıyordu: 0-0 yolu artık eylem guard'ı değil **uzatma üst sınırı** ile kesiliyor. Yeni ad + yeni test `TheOvertimeLimitPreventsTheActionGuardFromFiring`. D79 |
+| 8 | **`TurnoverProbability = 1.0` test fixture'ı kullanılmadı** | Bu değerle hucrem saati hiç dolmaz, mac bitmez ve "ilerleme yok" guard'ı devreye girer. M4'te öğrenilmiş tuzak. Fixture `0.6` + kısa hücrem saatine çevrildi. |
+| 9 | **Timeout, canlı topta uygulanmıyor** (D84 sapması) | Canlı possession'ı kesmek yeni bir `PossessionEndReason.Timeout` ve possession sayacı kayması demek. 06 §23 zaten "NBA profili etiketi bu ayrıntıları içermez" diyor. Bilinçli sapma, raporda yazılı. |
+| 10 | **`Steal`, `TeamRebound`, `BallOutOfBounds` event'leri eklenmedi** | D66: M5 adayıydı ama command yüzeyiyle çakışma riski nedeniyle M6'ya bırakıldı. `Turnover` hâlâ `LostBall` üretir — sahte attribution yok, dokümante eksiklik. |
+| 11 | **T15 (diagnostics) yazılmadı** | Diagnostics yüzeyi yok; eklemek yeni kapsam ve 05 §3'te yasaklanan "etkisiz mekanizmayı gizleme" riski. Sahte "geçti" konmadı. |
+| 12 | **`CommandValidator.ValidateForApplication` taktik için `null` döner** (throw değil) | İlk sürüm `default:` dalında `throw` vardı; ActionDecision sınırında taktik komutları **her zaman** buraya girdiği için tüm taktik komutları istisna fırlatıyordu. D90 |
+
+## 17. Bulunan ve düzeltilen motor hataları (regresyon testli)
+
+| Hata | Belirti | Test |
+|---|---|---|
+| **Tüm taktik komutları istisna fırlatıyordu** | `ValidateForApplication` taktik türlerinde `default:` → `throw`. ActionDecision sınırı her aksiyonda sunulduğu için **hiçbir taktik komutu uygulanamıyordu.** D90 | `TwoPendingTacticCommandsApplyInAcceptedOrderLastWriteWins` |
+| **`Simulate` yanlış komutları siliyordu** | `SelectForStep` filtrelediği halde `pending.RemoveRange(0, forThisStep.Length)` **filtrelenmemiş** ilk N komutu kaldırıyordu. DeadBall substitution'ı hiç gönderilmiyor, maç sonunda "Expired" ile reddediliyordu. D92 | `PendingCommandsAreExpiredWhenTheMatchEnds` |
+| **`Advance`'e verilen komut bir adım gecikmeli uygulanıyordu** | Kabul edilen komut, sunulan sınır o adımda olsa bile **bir sonraki** adımda boşaltılıyordu. Çağıran "gönderdim" diyordu, etki bir adım sonra oluyordu. D94 | `ACommandIsAppliedAtTheBoundaryOfTheStepThatReceivesIt` |
+| **Süresi dolmuş komut yine de etki ediyordu** | `Simulate` komutu hedef sınıra gelene kadar tutuyor; bu arada `ExpiresAfterSequence` aşılıyor olabiliyor. Kabulde denetim yoksa komut kuyruğa girer ve **hemen** uygulanır (D94), `ExpireStaleCommands` yakalayamaz. D95 | `PendingCommandsAreExpiredWhenTheMatchEnds` |
+| **Uygulanan komut kuyrukta kalıyordu** | `Settle` yalnız `Settled` işaretliyordu; komut hem "işlendi" sayılıp hem kuyrukta kalıyordu. Doğrudan çağrıldığında aynı komut ikinci kez uygulanabiliyordu. D93 | `SettledCommandsAreRemembered` |
+| **0-0 maçı hâlâ 521 periyot üretiyordu** | D79 uzatma üst sınırı `ClosePeriod`'a bağlandıktan sonra **6 periyotta** duruyor. Test adı "guard" derdi ve yanlıştı. | `DegenerateZeroScoreMatchIsAbortedAtTheOvertimeLimitWithoutFalsifyingTheScore`, `TheOvertimeLimitPreventsTheActionGuardFromFiring` |
+
+### Hâlâ açık riskler (M5 sonrası)
+
+1. **Katsayılar kalibre değil.** Gözlenen tek maç 112-118. 10K/100K deneyi **M6'da**
+   ve **çalıştırılmadı**. M5'in "tek maç sonucu yönü" ölçümü de bilinçli olarak
+   yapılmadı.
+2. **`ImmutableArray<T>` içeren `record`'larda değer eşitliği bozuk** (D87, ölçüldü).
+   M5'te `MatchStateFingerprint` ile aşıldı; **M7'de kalıcı katmanda çözülmeli**
+   (03 §"Match completion idempotent").
+3. **`ShortTimeoutsPerTeam = 3` kaynaktan gelmiyor** (D89). Onay bekliyor.
+4. **Timeout canlı topta uygulanmıyor** (D84 sapması). Üründe hissedilir; 06 §23'e
+   dayanıyor ve raporda yazılı.
+5. **AI fallback = motor yönetir** (D81). Yönetici hiç komut göndermezse maç motor
+   tarafından oynanır. Ürün kararı, M7'de "devraldım" modu gerekebilir.
+6. **`MatchResult` tüm event'leri bellekte tutuyor** ve M5'te timeout alanları eklendi.
+   08 §8'in bellek sınırlı özet kipi M6'nın işi.
+7. **Snapshot boyutu**: `MatchState` tüm kadroyu taşıyor; 100K deneyde snapshot
+   maliyeti ölçülmedi. M6.
+8. **CI hâlâ yok.** Doğrulama yalnız yerel.
+9. **T15, T13'ün ikinci yarısı ve Q10 hâlâ açık.** T13/T14/T16 yazıldı; T15
+   diagnostics yüzeyi olmadığı için M6'ya kaldı.

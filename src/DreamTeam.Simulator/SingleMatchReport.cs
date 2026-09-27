@@ -23,7 +23,7 @@ internal static class SingleMatchReport
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(result);
 
-        writer.WriteLine("Dream Team Reborn — Match Engine v0.1 (M4 oyuncu/taktik etkisi)");
+        writer.WriteLine("Dream Team Reborn - Match Engine v0.1 (M5 yonetici mudahalesi)");
         writer.WriteLine(new string('=', 78));
         writer.WriteLine($"MatchId      : {result.MatchId}");
         writer.WriteLine($"Engine       : {engine.EngineVersion}   Rules: {engine.RulesVersion}");
@@ -46,6 +46,17 @@ internal static class SingleMatchReport
             writer.WriteLine(
                 $"OVR (gosterim): {HomeLabel}{homeOvr}  |  {AwayLabel}{awayOvr}"
                 + "  <- cozum girdisi degildir; motor bu degeri hic okumaz");
+        }
+
+        // M5: timeout butceleri (D84). Bunlar BASLANGIC degerleridir; motor
+        // yonetir (D81) ve bu argumansiz kosuda hic komut gonderilmez.
+        if (setup is not null)
+        {
+            writer.WriteLine(
+                $"Timeout      : {HomeLabel}{result.HomeTimeoutsUsed}/{result.HomeTimeoutBudget} tam"
+                + $", {result.HomeShortTimeoutsUsed}/{result.HomeShortTimeoutBudget} 20sn"
+                + $"  |  {AwayLabel}{result.AwayTimeoutsUsed}/{result.AwayTimeoutBudget} tam"
+                + $", {result.AwayShortTimeoutsUsed}/{result.AwayShortTimeoutBudget} 20sn");
         }
 
         writer.WriteLine();
@@ -205,10 +216,16 @@ internal static class SingleMatchReport
 
         foreach (var line in new[]
                  {
-                     "Yok: out-of-bounds, substitution penceresi, timeout, jump ball,",
-                     "     defensive three seconds, technical/flagrant foul.",
+                     "Yok: out-of-bounds, jump ball, defensive three seconds,",
+                     "     technical/flagrant foul.",
                      "Yok: steal atfedimi, transition aksiyonu, mismatch, takim ribaundu.",
-                     "Yok: mac ici taktik/tempo degisimi ve yedek yonetimi (M5).",
+                     "",
+                     "M5 KISITLARI (bilincli sapmalar):",
+                     "  Timeout canli topta UYGULANMAZ; yalniz dead-ball'da (D84).",
+                     "  Timeout kullanilmadi: motor yonetir (D81), bu kosuda komut yok.",
+                     "  ShortTimeoutsPerTeam=3 KAYNAKTAN GELMIYOR (D89); degistirilebilir.",
+                     "  Uzatma ust siniri 2; esitlikte mac Aborted olur (D79).",
+                     "",
                      "GameForm KAPALI: enerji disinda baska bir cesitlilik mekanizmasi yok.",
                      "",
                      "Bu sonuclar KALIBRE EDILMEMIS baslangic katsayilariyla uretildi.",
@@ -216,7 +233,7 @@ internal static class SingleMatchReport
                      "Sayisal dogrulama 10K/100K deneylerine (M6) birakilmistir.",
                      "Egalikte kazanan secilmemistir; rastgele kazanan uretilmez.",
                      "",
-                     "Siradaki adim: M5 yonetici mudahalesi ve replay.",
+                     "Siradaki adim: M6 CLI batch + 10K/100K deney ve denge adayi.",
                  })
         {
             writer.WriteLine("   " + line);

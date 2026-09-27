@@ -61,6 +61,32 @@ public sealed record MatchResult
 
     public int? AwayOverall { get; init; }
 
+    // ------------------------------------------------ M5: timeout özeti (D84)
+
+    /// <summary>M5 (D84): kullanılmış tam timeout sayısı.</summary>
+    public int HomeTimeoutsUsed { get; init; }
+
+    /// <summary>M5 (D84): kullanılmış tam timeout sayısı.</summary>
+    public int AwayTimeoutsUsed { get; init; }
+
+    /// <summary>M5 (D83, D89): kullanılmış 20 saniyelik timeout sayısı.</summary>
+    public int HomeShortTimeoutsUsed { get; init; }
+
+    /// <summary>M5 (D83, D89): kullanılmış 20 saniyelik timeout sayısı.</summary>
+    public int AwayShortTimeoutsUsed { get; init; }
+
+    /// <summary>M5 (D84): uzatma bonusu dâhil tam timeout bütçesi.</summary>
+    public int HomeTimeoutBudget { get; init; }
+
+    /// <summary>M5 (D84): uzatma bonusu dâhil tam timeout bütçesi.</summary>
+    public int AwayTimeoutBudget { get; init; }
+
+    /// <summary>M5 (D89): 20 saniyelik timeout bütçesi.</summary>
+    public int HomeShortTimeoutBudget { get; init; }
+
+    /// <summary>M5 (D89): 20 saniyelik timeout bütçesi.</summary>
+    public int AwayShortTimeoutBudget { get; init; }
+
     /// <summary>Terminal durum değilse null.</summary>
     public string? AbortReason { get; init; }
 }

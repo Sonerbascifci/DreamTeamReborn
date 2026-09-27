@@ -218,16 +218,20 @@ public class MatchTerminationTests
 
     /// <summary>
     /// T10d: eşitlikte kazanan **uydurulmaz** ve sonsuz döngü oluşmaz. 08 §T10
-    /// "guard → Aborted" der; motor da öyle yapar.
+    /// "guard → Aborted" der; motor da öyle yapar. M5'te bu yol artık
+    /// <b>uzatma üst sınırı</b> (D79) ile kesilir; aşağıdaki test bunu ölçer.
     ///
-    /// <para>Bu test, hiç puan atılabilen bir fixture ile <b>gerçekten</b> 0-0
-    /// beraberliğe düşülen yolu ölçer. Skor hep eşit olduğu için her periyot
-    /// sonunda uzatma açılır; sonsuz döngüyü yalnız eylem guard'ı keser. Aborted
-    /// sonuçta <c>IsTie</c> <b>false</b>'tır — 06 §8 gereği yarım kalan maç beraberlik
-    /// sayılmaz ve skor geçersizdir.</para>
+    /// <para><b>M5'te değişti (D79).</b> Önceden bu yol yalnız eylem
+    /// guard'ı ile kesiliyordu ve 521 periyot üretiyordu. Artık <b>uzatma üst
+    /// sınırı</b> devreye giriyor: skor hep eşit olduğu için her periyot
+    /// sonunda uzatma açılır, sınır dolunca maç <c>Aborted</c> olur. Aynı
+    /// gerekçe, çok daha erken ve açık bir sebeple.</para>
+    ///
+    /// <para>Aborted sonuçta <c>IsTie</c> <b>false</b>'tır — 06 §8 gereği yarım
+    /// kalan maç beraberlik sayılmaz ve skor geçersizdir.</para>
     /// </summary>
     [Fact]
-    public void DegenerateZeroScoreMatchIsAbortedByTheGuardWithoutFalsifyingTheScore()
+    public void DegenerateZeroScoreMatchIsAbortedAtTheOvertimeLimitWithoutFalsifyingTheScore()
     {
         var baseConfig = M2TestData.Config();
         var config = M2TestData.Config(
@@ -244,14 +248,38 @@ public class MatchTerminationTests
         Assert.Equal(0, result.HomeScore);
         Assert.Equal(0, result.AwayScore);
 
-        // Uzatma gerçekten açıldı (periyot sayısı normalin üstünde) ve guard
-        // devreye girdi.
-        Assert.True(result.PeriodsPlayed > config.Rules.PeriodCount);
-        Assert.Contains("guard", result.AbortReason!, StringComparison.OrdinalIgnoreCase);
+        // D79: ust sinir TUMPERIOD olundu. 4 duzenleme + 2 uzatma = 6.
+        Assert.Equal(
+            config.Rules.PeriodCount + config.Rules.MaxOvertimePeriods,
+            result.PeriodsPlayed);
+
+        Assert.Contains("sinir", result.AbortReason!, StringComparison.OrdinalIgnoreCase);
 
         // Maç sonu MatchEnded üretilmedi: yalnız MatchAborted.
         Assert.DoesNotContain(result.Events, e => e.Type == MatchEventType.MatchEnded);
         Assert.Contains(result.Events, e => e.Type == MatchEventType.MatchAborted);
+    }
+
+    /// <summary>
+    /// D79 geri regresyonu: eylem guard'ı **devreye girmemeli**. M4'te bu yol
+    /// 20 000 aksiyon üretiyordu; 6 periyotluk tavan onu gereksiz kilar.
+    /// </summary>
+    [Fact]
+    public void TheOvertimeLimitPreventsTheActionGuardFromFiring()
+    {
+        var baseConfig = M2TestData.Config();
+        var config = M2TestData.Config(
+            actions: baseConfig.Actions with { ShotCompletionProbability = 0.0 },
+            fouls: baseConfig.Fouls with { FoulProbabilityPerAction = 0.0 });
+
+        var result = new MatchSimulation(config).Simulate(M2TestData.NeutralMirror());
+
+        Assert.DoesNotContain("Eylem guard", result.AbortReason!, StringComparison.OrdinalIgnoreCase);
+
+        // M4'te 7224 possession / 35K event idi; tavan bunu belirgin azaltir.
+        Assert.True(
+            result.Events.Length < 2_000,
+            $"Event sayisi {result.Events.Length}; tavan ise calismiyor olabilir.");
     }
 
     [Fact]

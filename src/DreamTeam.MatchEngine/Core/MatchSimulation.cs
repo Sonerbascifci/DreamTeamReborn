@@ -2,12 +2,14 @@ using System.Collections.Immutable;
 using DreamTeam.Domain.Players;
 using DreamTeam.Domain.Teams;
 using DreamTeam.MatchEngine.Actions;
+using DreamTeam.MatchEngine.Commands;
 using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Events;
 using DreamTeam.MatchEngine.Fatigue;
 using DreamTeam.MatchEngine.Projection;
 using DreamTeam.MatchEngine.Randomness;
 using DreamTeam.MatchEngine.Ratings;
+using DreamTeam.MatchEngine.Rules;
 using DreamTeam.MatchEngine.Tactics;
 
 namespace DreamTeam.MatchEngine.Core;
@@ -56,7 +58,7 @@ namespace DreamTeam.MatchEngine.Core;
 /// </summary>
 public sealed class MatchSimulation
 {
-    public const int EventSchemaVersion = 3;
+    public const int EventSchemaVersion = 4;
 
     private readonly EngineConfig _config;
     private readonly string _configHash;
@@ -140,6 +142,7 @@ public sealed class MatchSimulation
             Possession = null,
             PendingShot = null,
             PendingFrees = null,
+            CommandQueue = CommandQueue.Empty,
             NextSequence = 1,
             NextActionId = 1,
             NextShotId = 1,
@@ -153,20 +156,95 @@ public sealed class MatchSimulation
     }
 
     /// <summary>
-    /// Bir sonraki anlamli sinra ilerler: periyot baslangici, bir aksiyonun
-    /// basindaki adim, birakilmis sutun cozumu veya bir serbest atis.
+    /// Bir sonraki anlamli sınıra ilerler: periyot başlangıcı, bir aksiyonun
+    /// başındaki adım, bırakılmış şutun çözümü veya bir serbest atış.
+    ///
+    /// <para><b>M5: imza genişledi.</b> 03 §"Offline ile canlı yürütme" hedef
+    /// sözleşmesi <c>Advance(MatchState, IReadOnlyList&lt;ScheduledManagerCommand&gt;)</c>.
+    /// Komutlar mantıksal sınıra bağlıdır, duvar saatine değil (07 §6).</para>
+    ///
+    /// <para><b>Parametresiz aşırı yükleme korunur</b> ve <c>CommandList.Empty</c>
+    /// ile aynıdır. M2–M4'ün testleri ve canlı kullanicisi bozulmaz; ikinci bir
+    /// motor yolu DEĞİLDİR, ayni cekirdek calisir (H03).</para>
+    ///
+    /// <para><b>Komutlar RNG TÜKETMEZ.</b> Gecersiz komut bile cekilis
+    /// harcamaz (07 §5); gecerli komut da harcamaz. M4'ün cagri sirasi
+    /// sozlesmesi bozulmaz.</para>
     /// </summary>
-    public StepResult Advance(MatchState state)
+    public StepResult Advance(MatchState state) =>
+        Advance(state, CommandList.Empty);
+
+    /// <summary>M5: komutlu aşırı yükleme (03 hedef sözleşmesi).</summary>
+    public StepResult Advance(
+        MatchState state,
+        IReadOnlyList<ScheduledManagerCommand> commands)
     {
         ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(commands);
 
         if (state.IsTerminal)
         {
-            return StepResult.NonTerminal(state, []);
+            // 07 §6 madde 4: mac bittiginde bekleyen komutlar Expired/Rejected
+            // olarak sonuclanir. Terminal durumda yeni komut kabul edilmez.
+            var (expiredQueue, expiredResults) = state.CommandQueue.ExpireAll(state.NextSequence);
+
+            if (expiredResults.IsEmpty)
+            {
+                return StepResult.Terminal(state, [], []);
+            }
+
+            var terminalStep = new Step(this, state with { CommandQueue = expiredQueue });
+            terminalStep.PublishCommandResults(expiredResults);
+
+            return StepResult.Terminal(terminalStep.State, [.. terminalStep.Events], expiredResults);
         }
 
         var step = new Step(this, state);
 
+        // D95: gelen komutlar KABULunden once son kullanma suresi denetlenir.
+        //
+        // Sebep: `Simulate` komutu hedef sinira gelene kadar kuyrukta tutar.
+        // Bu arada `NextSequence` ilerler ve komutun `ExpiresAfterSequence`
+        // degeri asilmis olabilir. Denetim kabulde yapilmazsa komut kuyruga
+        // girer, hemen uygulanir (D94) ve `ExpireStaleCommands` onu yakalayamaz;
+        // boylece "suresi dolmus" komut yine de etki ederdi.
+        var incoming = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(commands.Count);
+
+        foreach (var command in commands)
+        {
+            if (command.IsExpiredAfter(state.NextSequence))
+            {
+                step.RejectExpiredOnArrival(command);
+                continue;
+            }
+
+            incoming.Add(command);
+        }
+
+        if (incoming.Count > 0)
+        {
+            // M5: kabul siralamasi ve idempotency burada cozulur; UYGULAMA
+            // asagidaki sinirlarda olur.
+            step.AcceptCommands(incoming.ToImmutable());
+        }
+
+        // D94: kabul edilen DeadBall/PeriodBreak komutlari, bu adimin
+        // basinda sunulan sinir ISE AYNI ADIMDA bosaltilir.
+        //
+        // Sebep: `Advance(state, commands)` cagirisi "bu komutlar simdi
+        // gonderiliyor" demektir. Kabul edilen bir komut, o sunulan sinir
+        // bu adimda mevcutsa **beklemez** — aksi halde `Advance`'e verilen
+        // komutun etkisi bir sonraki adima kayar ve cagiran, gonderdigini
+        // sanma yerine kuyrugu kontrol etmek zorunda kalir.
+        //
+        // `Simulate` zaten komutlari yalnizca sunulan sinira gore gonderir
+        // (bkz. `BoundariesFor`), dolayisiyla bu yol onda da ayni davranir.
+        var currentBoundary = CurrentBoundary(state);
+
+        if (currentBoundary is { } boundary)
+        {
+            step.ApplyAtBoundary(boundary, isDeadBallWindow: boundary is not CommandBoundary.ActionDecision);
+        }
         if (state.PendingFrees is not null)
         {
             step.ResolveFreeThrow();
@@ -193,7 +271,10 @@ public sealed class MatchSimulation
                 + $"(PossessionId={state.Possession?.PossessionId.ToString() ?? "-"}).");
         }
 
-        return StepResult.NonTerminal(step.State, [.. step.Events]);
+        step.ExpireStaleCommands();
+        step.ExpandOnTerminal();
+
+        return StepResult.NonTerminal(step.State, [.. step.Events], [.. step.CommandResults]);
     }
 
     /// <summary>
@@ -201,10 +282,26 @@ public sealed class MatchSimulation
     /// batch deneyleri ve ileride canli runner hep bu yolu kullanir.
     ///
     /// Setup reddedilirse mac oynanmaz; <c>Aborted</c> sonuc ve gerekce doner.
+    ///
+    /// <para><b>M5: imza genişledi</b>, parametresiz aşırı yükleme korunur. Ayni
+    /// çekirdek çalışır; ikinci bir simülasyon algoritması <b>yazılmaz</b>
+    /// (H03).</para>
     /// </summary>
-    public MatchResult Simulate(MatchSetup setup)
+    public MatchResult Simulate(MatchSetup setup) => Simulate(setup, CommandList.Empty);
+
+    /// <summary>
+    /// M5: komutlu toplu kosu. Komutlar <b>adim sinirina baglanir</b>: her
+    /// komut, hedefledigi mantiksal sinira gelindiginde uygulanir.
+    /// </summary>
+    /// <param name="commands">
+    /// Tum mac boyunca gonderilecek komutlar. Sirasi onemlidir (D86 FIFO).
+    /// </param>
+    public MatchResult Simulate(
+        MatchSetup setup,
+        IReadOnlyList<ScheduledManagerCommand> commands)
     {
         ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(commands);
 
         var validation = MatchSetupValidator.Validate(setup);
 
@@ -216,9 +313,56 @@ public sealed class MatchSimulation
         var state = Create(setup);
         var events = new List<MatchEvent>();
 
+        // Kalan komutlar. Her adimda, hedef siniri BU ADIMDA olanlar gonderilir.
+        var remaining = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(commands.Count);
+
+        foreach (var command in commands)
+        {
+            remaining.Add(command);
+        }
+
+        var pending = remaining.ToImmutable();
+
         while (!state.IsTerminal)
         {
-            var step = Advance(state);
+            // D92: kaldirma `forThisStep.Length` kadar DEGIL, eslesen
+            // komutlarin KENDI indeksleriyle yapilir. Onceki surum
+            // `RemoveRange(0, n)` idi; bu, `SelectForStep` filtreledigi icin
+            // yanlis komutlari siliyor ve sonraki komutlar bir sonraki
+            // adima siziyordu. Tek duz cikti: 1. adimda gonderilen
+            // DeadBall substitution'i hic gonderilmemisti ve mac sonunda
+            // "Expired" olarak reddediliyordu.
+            var sendIndices = new List<int>();
+
+            for (var index = 0; index < pending.Length; index++)
+            {
+                if (BoundariesFor(state).Contains(pending[index].TargetBoundary))
+                {
+                    sendIndices.Add(index);
+                }
+            }
+
+            var batch = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(sendIndices.Count);
+
+            foreach (var index in sendIndices)
+            {
+                batch.Add(pending[index]);
+            }
+
+            var keep = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(
+                pending.Length - sendIndices.Count);
+
+            for (var index = 0; index < pending.Length; index++)
+            {
+                if (!sendIndices.Contains(index))
+                {
+                    keep.Add(pending[index]);
+                }
+            }
+
+            pending = keep.ToImmutable();
+
+            var step = Advance(state, batch.ToImmutable());
             state = step.State;
             events.AddRange(step.Events);
 
@@ -237,11 +381,62 @@ public sealed class MatchSimulation
 
         // M4: OVR burada hesaplanir ama motor HICBIR YERDE okumaz (D23/D24).
         // Yalnizca rapor ciktisinda gorunur; T03 bunu kanitlar.
-        return Project(setup, state, events) with
+        //
+        // M5: timeout ozeti de ayni sekilde yalniz RAPOR icindir.
+        return WithTimeoutSummary(
+            Project(setup, state, events),
+            state) with
         {
             HomeOverall = OverallRating(setup, TeamSide.Home),
             AwayOverall = OverallRating(setup, TeamSide.Away),
         };
+    }
+
+    /// <summary>
+    /// M5: bu adımda sunulan mantıksal sınırlar.
+    ///
+    /// <para><b>Neden adımın durumuna göre seçim?</b> 07 §6 komutu <b>mantıksal
+    /// sınıra** bağlar. Bir adım ya <c>StartPeriod</c>, <c>RunAction</c>,
+    /// <c>ResolvePendingShot</c> ya da <c>ResolveFreeThrow</c>'tır. Yalnız o
+    /// an sunulan sınırlar komut kabul eder; diğerleri bir sonraki adıma
+    /// kalır. Böylece komut <b>duvar saatine değil, mantığa** bağlı kalır.</para>
+    /// </summary>
+    private static IReadOnlyList<CommandBoundary> BoundariesFor(MatchState state)
+    {
+        var current = CurrentBoundary(state);
+
+        return current is null ? [] : [current.Value];
+    }
+
+    /// <summary>
+    /// M5: bu adım sunan mantıksal sınır. <c>null</c> ise hiçbir sınır sunulmuyor
+    /// (ör. bekleyen şutun çözümü — top hâlâ canlı, savunma atfında hiçbir şey
+    /// değişmez, 06 §7).
+    /// </summary>
+    private static CommandBoundary? CurrentBoundary(MatchState state)
+    {
+        if (state.PendingFrees is not null)
+        {
+            // Serbest atis serisinin SONUCU dead-ball'dir.
+            return CommandBoundary.DeadBall;
+        }
+
+        if (state.PendingShot is not null)
+        {
+            return null;
+        }
+
+        if (state.Phase is MatchPhase.NotStarted or MatchPhase.PeriodBreak)
+        {
+            return CommandBoundary.PeriodBreak;
+        }
+
+        if (state.Phase == MatchPhase.LiveBall)
+        {
+            return CommandBoundary.ActionDecision;
+        }
+
+        return null;
     }
 
     private static string Describe(MatchSetupValidationResult validation) =>
@@ -317,6 +512,28 @@ public sealed class MatchSimulation
             Events = [.. events],
             PlayerEnergy = completed ? BuildEnergyReport(state) : [],
             AbortReason = abortReason,
+        };
+    }
+
+    /// <summary>
+    /// M5 (D84, D89): maç sonu timeout özeti. Rapor ve M7'nin canlı runner'ı
+    /// kullanır; <b>motor hiçbir yerde okumaz</b> — bütçe yalnız komut
+    /// doğrulamasında girdidir.
+    /// </summary>
+    private static MatchResult WithTimeoutSummary(MatchResult result, MatchState state)
+    {
+        var rules = state.Config.Rules;
+
+        return result with
+        {
+            HomeTimeoutsUsed = state.Home.FullTimeoutsUsed,
+            AwayTimeoutsUsed = state.Away.FullTimeoutsUsed,
+            HomeShortTimeoutsUsed = state.Home.ShortTimeoutsUsed,
+            AwayShortTimeoutsUsed = state.Away.ShortTimeoutsUsed,
+            HomeTimeoutBudget = TimeoutPolicy.FullBudget(rules, state.Clock),
+            AwayTimeoutBudget = TimeoutPolicy.FullBudget(rules, state.Clock),
+            HomeShortTimeoutBudget = TimeoutPolicy.ShortBudget(rules, state.Clock),
+            AwayShortTimeoutBudget = TimeoutPolicy.ShortBudget(rules, state.Clock),
         };
     }
 
@@ -407,7 +624,335 @@ public sealed class MatchSimulation
 
         public List<MatchEvent> Events { get; } = [];
 
+        /// <summary>
+        /// M5: bu adımda üretilen komut sonuçları. 03: StepResult command
+        /// sonuçlarını da taşır.
+        /// </summary>
+        public List<CommandResult> CommandResults { get; } = [];
+
         public MatchState State => _state;
+
+        // ------------------------------------------------- M5: komut yonetimi
+
+        /// <summary>
+        /// Gelen komutları kabul eder. Kabul; siralama, idempotency ve zarf
+        /// dogrulamasi yapar. <b>Uygulama burada olmaz</b>: kabul edilen komut
+        /// kuyruga girer ve hedefledigi mantıksal sinira gelince bosaltilir
+        /// (07 §5: "ACK = alindi/kuyruga girdi. Applied = state'e islendi").
+        ///
+        /// <para><b>RNG tüketmez.</b> Kabul saf bir yazma islemidir.</para>
+        /// </summary>
+        /// <summary>
+        /// D95: gelir gelmez suresi dolmus komutu reddeder. Kuyruga hic girmez.
+        /// </summary>
+        public void RejectExpiredOnArrival(ScheduledManagerCommand command)
+        {
+            _state = _state with
+            {
+                CommandQueue = _state.CommandQueue.MarkSettled(command.CommandId),
+            };
+
+            var rejected = CommandResult.Rejected1(
+                command,
+                CommandRejectionReason.Expired,
+                _state.NextSequence,
+                "Komut gonderildigi anda suresi dolmustu.");
+
+            CommandResults.Add(rejected);
+            PublishCommandResultEvent(rejected);
+        }
+
+        public void AcceptCommands(ImmutableArray<ScheduledManagerCommand> incoming)
+        {
+            if (incoming.IsEmpty)
+            {
+                return;
+            }
+
+            var accepted = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(incoming.Length);
+
+            foreach (var candidate in incoming)
+            {
+                var team = _state.Team(candidate.Side);
+
+                var failure = CommandValidator.ValidateEnvelope(candidate, team);
+
+                if (failure is not null)
+                {
+                    // Zarf gecersizse komut KUYRUGA GIRMEZ; dogrudan reddedilir
+                    // ve kalici olarak isaretlenir ki tekrar gonderilirse
+                    // yeniden denenmesin (T14).
+                    _state = _state with
+                    {
+                        CommandQueue = _state.CommandQueue.MarkSettled(candidate.CommandId),
+                    };
+
+                    var rejected = CommandResult.Rejected1(
+                        candidate,
+                        failure.Value.Reason,
+                        _state.NextSequence,
+                        failure.Value.Message);
+
+                    CommandResults.Add(rejected);
+                    PublishCommandResultEvent(rejected);
+                    continue;
+                }
+
+                accepted.Add(candidate);
+            }
+
+            if (accepted.Count == 0)
+            {
+                return;
+            }
+
+            var (nextQueue, acceptResults) = _state.CommandQueue.Accept(
+                [.. accepted], _state.NextSequence);
+
+            _state = _state with { CommandQueue = nextQueue };
+
+            foreach (var result in acceptResults)
+            {
+                CommandResults.Add(result);
+                PublishCommandResultEvent(result);
+            }
+        }
+
+        /// <summary>
+        /// Suresi dolmus komutlari dusurur (07 §6 "queue/expire/reject policy acik
+        /// olmali"). Her adimin sonunda cagrilir.
+        /// </summary>
+        public void ExpireStaleCommands()
+        {
+            var (queue, results) = _state.CommandQueue.ExpirePast(_state.NextSequence);
+
+            if (results.IsEmpty)
+            {
+                return;
+            }
+
+            _state = _state with { CommandQueue = queue };
+            PublishCommandResults(results);
+        }
+
+        /// <summary>
+        /// Terminal duruma girildiginde kalan tum komutlari sonlandirir
+        /// (07 §6 madde 4).
+        /// </summary>
+        public void ExpandOnTerminal()
+        {
+            if (!_state.IsTerminal)
+            {
+                return;
+            }
+
+            var (queue, results) = _state.CommandQueue.ExpireAll(_state.NextSequence);
+
+            if (results.IsEmpty)
+            {
+                return;
+            }
+
+            _state = _state with { CommandQueue = queue };
+            PublishCommandResults(results);
+        }
+
+        /// <summary>
+        /// <b>Sinir bosaltma.</b> Verilen mantıksal sinira gelen komutlari
+        /// sirayla uygular. D86: FIFO; last-write-wins taktik komutlarindan
+        /// dogal olarak cikar.
+        ///
+        /// <para><b>Uygulama dogrulamasi burada tekrarlanir</b> (06 §7): araya
+        /// baska bir komut girmis olabilir.</para>
+        /// </summary>
+        public void ApplyAtBoundary(CommandBoundary boundary, bool isDeadBallWindow)
+        {
+            if (_state.CommandQueue.PendingCount == 0)
+            {
+                return;
+            }
+
+            var (queue, atBoundary) = _state.CommandQueue.TakeAt(boundary);
+
+            if (atBoundary.IsEmpty)
+            {
+                return;
+            }
+
+            _state = _state with { CommandQueue = queue };
+
+            var rules = _engine._config.Rules;
+            var isFinalTwoMinutes = rules.IsFinalTwoMinutes(
+                rules.PeriodDurationMs - _state.Clock.GameClockMs);
+
+            var processed = ImmutableArray.CreateBuilder<ScheduledManagerCommand>(atBoundary.Length);
+
+            foreach (var command in atBoundary)
+            {
+                var team = _state.Team(command.Side);
+
+                var failure = CommandValidator.ValidateForApplication(
+                    command,
+                    team,
+                    rules,
+                    _state.Clock,
+                    isDeadBallWindow,
+                    isFinalTwoMinutes);
+
+                if (failure is not null)
+                {
+                    var rejected = CommandResult.Rejected1(
+                        command, failure.Value.Reason, _state.NextSequence, failure.Value.Message);
+
+                    CommandResults.Add(rejected);
+                    PublishCommandResultEvent(rejected);
+                    processed.Add(command);
+                    continue;
+                }
+
+                ApplyCommand(command);
+                processed.Add(command);
+            }
+
+            _state = _state with { CommandQueue = _state.CommandQueue.Settle(processed.ToImmutable()) };
+        }
+
+        private void ApplyCommand(ScheduledManagerCommand command)
+        {
+            var team = _state.Team(command.Side);
+
+            switch (command.Kind)
+            {
+                case ManagerCommandKind.ChangeOffense:
+                {
+                    var next = command.Payload.OffensiveTactic!.Value;
+
+                    _state = ReplaceTeam(command.Side, team with { OffensiveTactic = next });
+
+                    Emit(
+                        MatchEventType.TacticChanged,
+                        new TacticChangedPayload(command.CommandId, team.OffensiveTactic, next),
+                        possessionId: _state.Possession?.PossessionId,
+                        actionId: null,
+                        teamId: command.Side,
+                        playerId: null,
+                        secondaryPlayerId: null);
+                    break;
+                }
+
+                case ManagerCommandKind.ChangeDefense:
+                {
+                    var next = command.Payload.DefensiveTactic!.Value;
+
+                    _state = ReplaceTeam(command.Side, team with { DefensiveTactic = next });
+
+                    Emit(
+                        MatchEventType.DefenseChanged,
+                        new DefenseChangedPayload(command.CommandId, team.DefensiveTactic, next),
+                        possessionId: _state.Possession?.PossessionId,
+                        actionId: null,
+                        teamId: command.Side,
+                        playerId: null,
+                        secondaryPlayerId: null);
+                    break;
+                }
+
+                case ManagerCommandKind.ChangePace:
+                {
+                    var next = command.Payload.Pace!.Value;
+
+                    _state = ReplaceTeam(command.Side, team with { Pace = next });
+
+                    Emit(
+                        MatchEventType.PaceChanged,
+                        new PaceChangedPayload(command.CommandId, team.Pace, next),
+                        possessionId: _state.Possession?.PossessionId,
+                        actionId: null,
+                        teamId: command.Side,
+                        playerId: null,
+                        secondaryPlayerId: null);
+                    break;
+                }
+
+                case ManagerCommandKind.Substitute:
+                {
+                    var incoming = command.Payload.IncomingPlayerId!.Value;
+                    var outgoing = command.Payload.OutgoingPlayerId!.Value;
+
+                    _state = ReplaceTeam(
+                        command.Side, SubstitutionPolicy.Apply(team, incoming, outgoing));
+
+                    Emit(
+                        MatchEventType.Substitution,
+                        new SubstitutionPayload(command.CommandId, incoming, outgoing),
+                        possessionId: _state.Possession?.PossessionId,
+                        actionId: null,
+                        teamId: command.Side,
+                        playerId: null,
+                        secondaryPlayerId: outgoing);
+                    break;
+                }
+
+                case ManagerCommandKind.RequestTimeout:
+                {
+                    var kind = command.Payload.TimeoutKind!.Value;
+
+                    _state = ReplaceTeam(command.Side, TimeoutPolicy.Spend(team, kind));
+                    var updated = _state.Team(command.Side);
+
+                    Emit(
+                        MatchEventType.Timeout,
+                        new TimeoutPayload(
+                            command.CommandId,
+                            kind,
+                            updated.FullTimeoutsUsed,
+                            updated.ShortTimeoutsUsed),
+                        possessionId: _state.Possession?.PossessionId,
+                        actionId: null,
+                        teamId: command.Side,
+                        playerId: null,
+                        secondaryPlayerId: null);
+                    break;
+                }
+
+                default:
+                    throw new InvalidOperationException($"Bilinmeyen komut turu: {command.Kind}.");
+            }
+
+            var applied = CommandResult.Applied1(command, _state.NextSequence);
+            CommandResults.Add(applied);
+            PublishCommandResultEvent(applied);
+        }
+
+        public void PublishCommandResults(ImmutableArray<CommandResult> results)
+        {
+            foreach (var result in results)
+            {
+                PublishCommandResultEvent(result);
+            }
+        }
+
+        private void PublishCommandResultEvent(CommandResult result)
+        {
+            Emit(
+                result.Applied ? MatchEventType.CommandApplied : MatchEventType.CommandRejected,
+                result.Applied
+                    ? new CommandAppliedPayload(
+                        result.CommandId,
+                        result.Kind,
+                        result.Boundary,
+                        result.AcceptedOrder)
+                    : new CommandRejectedPayload(
+                        result.CommandId,
+                        result.Kind,
+                        result.Reason,
+                        result.Message),
+                possessionId: _state.Possession?.PossessionId,
+                actionId: null,
+                teamId: result.Side,
+                playerId: null,
+                secondaryPlayerId: null);
+        }
 
         // ---------------------------------------------------------------- periyot
 
@@ -484,6 +1029,11 @@ public sealed class MatchSimulation
                 playerId: null,
                 secondaryPlayerId: null);
 
+            // M5: devre arasi bir dead-ball penceresidir (D82). Substitution ve
+            // timeout BURADA uygulanir. Yeni hucrem baslamadan ONCE bosaltilir,
+            // boylece lineup degisikligi ilk aksiyonda gecerlidir.
+            ApplyAtBoundary(CommandBoundary.PeriodBreak, isDeadBallWindow: true);
+
             StartPossession(DrawStarterSide());
         }
 
@@ -503,6 +1053,19 @@ public sealed class MatchSimulation
                 secondaryPlayerId: null);
 
             var rules = _engine._config.Rules;
+
+            // M5 (D79): uzatma ust siniri. Skor esitse ve sinir dolduysa mac
+            // Aborted olur; kazanan UYDURULMAZ ve MatchEnded YAZILMAZ.
+            // 08 T10 "guard -> Aborted" yonu korunur, ama artik 521 periyot
+            // beklemek yerine acik bir sinir vardir.
+            var overtimeLimit = OvertimePolicy.LimitReachedReason(
+                rules, _state.Clock, _state.HomeScore, _state.AwayScore);
+
+            if (overtimeLimit is not null)
+            {
+                Abort(overtimeLimit);
+                return;
+            }
 
             if (PeriodController.ShouldStartOvertime(
                     rules,
@@ -555,6 +1118,15 @@ public sealed class MatchSimulation
 
             var offense = _state.Possession?.Offense
                 ?? throw new InvalidOperationException("Aksiyon yok: possession yok.");
+
+            // M5 (D86, 07 §6 madde 1): taktik ve tempo BIR SONRAKI AKSIYON KARAR
+            // SINIRINDA uygulanir. Cozulmeye baslamis bir sutu geriye donuk
+            // DEGISTIRMEZ; yalniz buraya gelen aksiyonun secimini etkiler.
+            //
+            // Bu, planin en onemli yerlesimidir: komutlar iceride, ayni adimda
+            // bosaltilir; MatchPhase.DeadBall KALICI YAZILMAZ (D54 korunur) ve
+            // event'siz bir adim olusmaz.
+            ApplyAtBoundary(CommandBoundary.ActionDecision, isDeadBallWindow: false);
 
             var attacking = _state.Team(offense);
             var defending = _state.Team(offense.Opponent());
@@ -1352,7 +1924,20 @@ public sealed class MatchSimulation
                 // 06 §4: topu devreden taraf yeni hucremu baslatir. Devir, canli
                 // sure tuketmez; bu yuzden state'e DeadBall yazilmadan bir sonraki
                 // possession dogrudan baslar.
+                //
+                // M5: bu, possession sonundaki TEK dead-ball penceresidir.
+                // Substitution ve timeout BURADA, yeni possession baslamadan
+                // ONCE bosaltilir.
+                //
+                // D82 (kullanici netlestirdi): isabetli basket sonrasi PENCERE
+                // ACILIR. 5+1 nokta: isabetli basket, hucrem degisimi, serbest
+                // atis serisi sonu, hucrem saati ihlali, duduk sonrasi faul,
+                // devre arasi. Yalniz DREB/steal sonrasi oyun CANLIDIR ve
+                // pencere YOKTUR — o yol possession degistirmeden gecer.
                 _state = _state with { Phase = MatchPhase.LiveBall };
+
+                ApplyAtBoundary(CommandBoundary.DeadBall, isDeadBallWindow: true);
+
                 StartPossession(previousOffense.Opponent());
             }
         }

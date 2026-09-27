@@ -120,7 +120,10 @@ public sealed record FreeThrowModel
 
 /// <summary>
 /// Saat ve periyot kuralları. 06_RULES_AND_STATE_MACHINE.md §1'deki sade profil
-/// (D31). Tam NBA sadakati iddiası taşımaz: bonus, foul-out ve timeout yoktur.
+/// (D31). M5'te timeout ve uzatma üst sınırı da buraya girdi.
+///
+/// Tam NBA sadakati iddiası taşımaz: bonus, foul-out ve timeout'un canlı
+/// topta uygulanması yoktur (D84 sapması).
 /// </summary>
 public sealed record RulesProfile
 {
@@ -140,6 +143,61 @@ public sealed record RulesProfile
     /// </summary>
     public required long OffensiveReboundShotClockMs { get; init; }
 
+    // ---------------------------------------------------------------- M5: uzatma
+
+    /// <summary>
+    /// M5 (D79): en fazla kac uzatma oynanabilir. Sinira gelindiginde skor hala
+    /// esitse mac <c>Aborted</c> olur; kazanan UYDURULMAZ ve <c>IsTie</c>
+    /// false kalir (06 §8: yarim kalan mac beraberlik sayilmaz).
+    ///
+    /// 08 T10 "guard -> Aborted" diyordu; bu deger o korumanin yerine gecer
+    /// cunku 0-0 beraberlikte guard'a kadar 521 periyot uretiliyordu.
+    /// </summary>
+    public required int MaxOvertimePeriods { get; init; }
+
+    // ---------------------------------------------------------------- M5: timeout
+
+    /// <summary>M5 (D84): takim basina maclik tam timeout butcesi.</summary>
+    public required int FullTimeoutsPerTeam { get; init; }
+
+    /// <summary>
+    /// M5 (D84): bunun kadar tam timeout yalnizca duzenleme periyodunun son
+    /// <see cref="FinalTwoMinutesMs"/> kadarinda kullanilabilir. Ilk
+    /// <c>FullTimeoutsPerTeam - FullTimeoutsInFinalTwoMinutes</c> adet timeout
+    /// herhangi bir dead-ball'da kullanilabilir.
+    /// </summary>
+    public required int FullTimeoutsInFinalTwoMinutes { get; init; }
+
+    /// <summary>
+    /// M5 (D83, D89): takim basina 20 saniyelik timeout butcesi.
+    ///
+    /// <para><b>KAYNAKTAN GELMIYOR.</b> D83 yalniz timeoutun <i>tipini</i>
+    /// tanimladi, sayiyi degil. NBA'da bu sayi 5'tir ama o degeri kopyalamak
+    /// kaynaksiz bir tercih olurdu. Yer tutucu; <c>ConfigHash</c>'e girdigi icin
+    /// tek satir degiserek duzeltilebilir. Kullanici onayi bekliyor.</para>
+    /// </summary>
+    public required int ShortTimeoutsPerTeam { get; init; }
+
+    /// <summary>
+    /// M5 (D84, 06 §18): her uzatma periyodu icin ek timeout hakki. Sayac
+    /// kumulatiftir: uzatma onceki haklari silmez, ustune ekler.
+    /// </summary>
+    public required int OvertimeTimeoutBonus { get; init; }
+
+    /// <summary>
+    /// Duzenleme periyodunun son kac milisaniyesinde "son iki dakika"
+    /// penceresi baslar. <see cref="PeriodDurationMs"/>'dan turetilir; ayri bir
+    /// ayar degildir, iki yerde tutulmasi tutarsizlik riski yaratirdi.
+    /// </summary>
+    public long FinalTwoMinutesMs => Math.Min(2 * 60 * 1000, PeriodDurationMs);
+
+    /// <summary>Duzenleme periyodunun son iki dakikasinda mi? (Orijinal sureye gore)</summary>
+    public bool IsFinalTwoMinutes(long elapsedInPeriodMs) =>
+        elapsedInPeriodMs >= PeriodDurationMs - FinalTwoMinutesMs;
+
+    /// <summary>Toplam tam timeout butcesi. Uzatma bonusu dahil DEGILDIR.</summary>
+    public int TotalFullTimeouts => FullTimeoutsPerTeam;
+
     public static RulesProfile SimpleNbaInspired { get; } = new()
     {
         PeriodCount = 4,
@@ -147,6 +205,11 @@ public sealed record RulesProfile
         ShotClockMs = 24 * 1000,
         OvertimeDurationMs = 5 * 60 * 1000,
         OffensiveReboundShotClockMs = 14 * 1000,
+        MaxOvertimePeriods = 2,
+        FullTimeoutsPerTeam = 4,
+        FullTimeoutsInFinalTwoMinutes = 2,
+        ShortTimeoutsPerTeam = 3,
+        OvertimeTimeoutBonus = 1,
     };
 }
 
@@ -403,6 +466,14 @@ public sealed record EngineConfig
         Append("shotClockMs", Rules.ShotClockMs);
         Append("overtimeDurationMs", Rules.OvertimeDurationMs);
         Append("offensiveReboundShotClockMs", Rules.OffensiveReboundShotClockMs);
+
+        // M5: uzatma ust siniri (D79) ve timeout butceleri (D84/D89). Sayilar
+        // hash'e girdigi icin degistirildiginde ConfigHash ayrisir.
+        Append("maxOvertimePeriods", Rules.MaxOvertimePeriods);
+        Append("fullTimeoutsPerTeam", Rules.FullTimeoutsPerTeam);
+        Append("fullTimeoutsInFinalTwoMinutes", Rules.FullTimeoutsInFinalTwoMinutes);
+        Append("shortTimeoutsPerTeam", Rules.ShortTimeoutsPerTeam);
+        Append("overtimeTimeoutBonus", Rules.OvertimeTimeoutBonus);
 
         AppendReal("atRimBase", Shot.AtRimBase);
         AppendReal("closePostBase", Shot.ClosePostBase);
