@@ -59,7 +59,7 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 
 ## 4. Açık sorular — doğru aşamada yanıtlanacak
 
-| ID | Soru | Önerilen başlangıç / seçenek | Son karar zamanı | Durum (27.09.2026) |
+| ID | Soru | Önerilen başlangıç / seçenek | Son karar zamanı | Durum (28.09.2026) |
 |---|---|---|---|---|
 | Q01 | Yeni repo mu mevcut repo mu; hangi SDK/test sistemi? | Gerçek ortamı incele; uyumlu sürümü kilitle | M0, M1 engeli | **Çözüldü → D20, D21** |
 | Q02 | RNG ve determinism garanti kapsamı? | Sürümlü algoritma + başlangıçta kilitli runtime; platformlar arası ayrıca test | M0, M1 engeli | **Çözüldü → D22, D23** |
@@ -70,7 +70,7 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q07 | Bonus, foul-out, az oyuncu terminal policy? | Sade profil; forfeit/abort farkı açık | M3 | **Çözüldü → D40, D41, D42, D43** |
 | Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | **Çözüldü → D57** |
 | Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | **Çözüldü → D58, D62** |
-| Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | **Kısmen çözüldü → D60 (M4'te kapalı); dağılım/birim M6'ya açık** |
+| Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | **Kısmen çözüldü → D60 (M4'te kapalı). M6 kapsamı dışında bırakıldı (D98b); dağılım/birim hâlâ açık** |
 | Q11 | Timeout hakkı, legal pencereler, late game? | 06/07 taslağı üzerinden netleştir | M5 | **Çözüldü → D80, D81, D84.** Clutch yok; motor yönetir; 4 tam timeout, son 2'si son 2 dakikada, uzatma +1. **Sapma:** timeout canlı topta uygulanmaz |
 | Q12 | Canlı maç kaç gerçek dakika sürmeli? | Simülasyon hızından bağımsız ürün ayarı | M7 | Açık |
 | Q13 | PostgreSQL/MSSQL, auth ve hosting? | Ekip/ortam ve gerçek gereksinimle seç | M7 | Açık — M1'i engellemedi |
@@ -78,7 +78,7 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q15 | Başlangıç bütçesi, ödül, scout, salary cap? | Basit AI loop, ücretler ayrı karar | M10 | Açık |
 | Q16 | PvP MVP şartı mı? | Önce AI rakip; PvP ayrı milestone | M7 öncesi ürün kapsamı | Açık |
 | Q17 | Gerçek veri, günlük update ve ekonomi algoritması? | Fictional başlangıç; provider adapter sonra | M11+ | Açık |
-| Q18 | Sezon referansı ve sayısal release eşikleri? | Veri seti seç + fixture koşulları + holdout | M6 | Açık |
+| Q18 | Sezon referansı ve sayısal release eşikleri? | Veri seti seç + fixture koşulları + holdout | M6 | **Çözüldü → D98c.** Gerçek veri referansı **yok**; eşikler **iç tutarlılıktan** türetilir (mirror simetri, uç değer güvenliği, dominant strateji yokluğu, kalite farkı yönü, tempo sırası, home/away yer değiştirme). NBA sezonuyla karşılaştırma raporda **bulunmaz** |
 
 Q04–Q18'in çoğu M1 için bekleme sebebi değildir. Codex her soruyu bir kerede kullanıcıya yöneltmek yerine aktif milestone'ı etkileyenleri ayırmalı.
 
@@ -217,7 +217,7 @@ kararlar. **Kod yazılmadı**; `docs/plans/M5_IMPLEMENTATION_PLAN.md` yazıldı.
 | **D86** | Bekleyen komut sırası **`AcceptedOrder` ile FIFO**; aynı tip taktik komutlarında last-write-wins doğal olarak çıkar; ikinci substitution ilk uygulanmış lineup'e karşı **yeniden** doğrulanır | Uygulama kararı — 07 §6 | 07 §6 "FIFO veya last-write-wins seçilir ve replay kaydına yansır; sessizce keyfî seçme" diyor. `AcceptedOrder` istemci tarafından belirlenemez (07 §5). |
 | **D87** | **M5, `MatchStateFingerprint` yardımcısı ekler ve tüm durum karşılaştırmalarını onunla yapar.** `Assert.Equal(state, restored)` **yazılmayacak** | Uygulama kararı — **ölçülmüş hata** | `ImmutableArray<T>.Equals` **referans eşitliğidir**; bu yüzden `record` üretici eşitliği `Team`, `TeamMatchSetup`, `MatchSetup` ve `MatchState` için bozuktur. Bu oturumda ölçüldü: aynı id + aynı roster içeren iki ayrı `Team` örneğinde `Equals` = **False**; `ImmutableArray` içermeyen `Player`'da = **True**. `Team` JSON round-trip bayt aynı ama `Equals` yine `False`. T16 ("restore sonrası aynı devam") bu yüzden `Assert.Equal` ile test **edilemez**: hem yanlış negatif hem de yanlış pozitif verir. **M7'de kalıcı katmanda çözülmeli.** |
 | **D88** | `System.Text.Json` **`net10.0` sınıf kütüphanesinde sıfır NuGet paketiyle** kullanılabilir; `ImmutableArray<T>`, `required`+`init` record round-trip'i çalışır. Enum'lar varsayılan **sayısal** serileştirilir | Ölçüm, karar değil | Bu oturumda geçici bir prob dosyası yazılıp koşturuldu ve silindi. Sonuç: bağımlılık kısıtı bozulmadan replay mümkün. Enum için M5 `JsonStringEnumConverter` (isim tabanlı) kullanacak; aksi halde enum ordering'i bir kez değişse kayıtlı snapshot **sessizce** bozulur. |
-| **D89** | `RulesProfile.ShortTimeoutsPerTeam = 3` | **Açık — kaynaktan gelmiyor, onay bekliyor** | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama bu bir sayı uydurmadır. 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısının parçası; `ConfigHash`'e girdiği için kolayca değiştirilebilir. |
+| **D89** | `RulesProfile.ShortTimeoutsPerTeam = 3` | **KAPANDI → D98a** (M6 planlaması, 28 Eylül 2026; kullanıcı **5**'i seçti) | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama bu bir sayı uydurmadır. 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısının parçası; `ConfigHash`'e girdiği için kolayca değiştirilebilir. |
 
 ### Bu oturumda ölçülen (tahmin edilmeyen) bulgular
 
@@ -238,13 +238,13 @@ kararlar. **Kod yazılmadı**; `docs/plans/M5_IMPLEMENTATION_PLAN.md` yazıldı.
 - **Q11** (timeout hakkı, legal pencereler, late game) → **D80 + D81 + D84**.
 - **06 §7'nin M5'e bıraktığı substitution penceresi kararı** → **D82**.
 - **D78** (uzatma üst sınırı) → **D79**.
+- **D89** (20 saniyelik timeout sayısı) → **D98a**.
 
 ### Hâlâ açık
 
-- **D89** — `ShortTimeoutsPerTeam` sayısı (kaynaksız yer tutucu).
-- **Q10** — GameForm dağılımı/birimi (M6).
+- **Q10** — GameForm dağılımı/birimi (M6 kapsamı dışında bırakıldı, D98b).
 - **Q12** — canlı maç kaç gerçek dakika sürmeli (M7).
-- **Q13–Q18** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri, sezon referansı.
+- **Q13–Q17, Q19** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri.
 
 ## 13. M5 uygulama kararları — 28 Eylül 2026
 
@@ -255,7 +255,7 @@ Motor tarafında alınan kararlar. Hepsi motor kuralıdır; ürün kararı deği
 |---|---|---|---|
 | **D87** | **`MatchStateFingerprint` yardımcısı eklendi; durum karşılaştırmaları `Assert.Equal` ile YAPILMAZ.** Tüm replay/invariant testleri parmak izi kullanır | Uygulama kararı — **ölçülmüş hata** | `ImmutableArray<T>.Equals` **referans eşitliğidir**; bu yüzden `record` üretici eşitliği `Team`, `TeamMatchSetup`, `MatchSetup` ve `MatchState` için bozuktur. Bu oturumda ölçüldü: aynı id + aynı roster içeren iki ayrı `Team` örneğinde `Equals` = **False**; `ImmutableArray` içermeyen `Player`'da = **True**; `Team` JSON round-trip bayt aynı ama `Equals` yine **False**. T16 (`Assert.Equal(state, restored)`) bu yüzden **yazılamaz**: hem yanlış negatif hem yanlış pozitif verir. **M7'de kalıcı katmanda çözülmeli** (03 §"Match completion idempotent"). |
 | **D88** | Enum'lar **isim tabanlı** serileştirilir; `System.Text.Json` **sıfır NuGet paketiyle** kullanılır; `ImmutableArray<byte>` hex olarak yazılır | Ölçüm + uygulama kararı | Bu oturumda ölçüldü: sıfır paketle çalışıyor, `ImmutableArray<T>` ve `required`+`init` record round-trip'i doğru, RNG state 8 bayt. Ama enum varsayılan **sayısal** (`InsidePost` → `3`): ordering'i bir kez değişse kayıtlı snapshot **sessizce** bozulur. |
-| **D89** | `RulesProfile.ShortTimeoutsPerTeam = 3` | **Açık — kaynaktan gelmiyor, onay bekliyor** | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama bu bir sayı uydurmak olurdu. 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısının parçası; `ConfigHash`'e girdiği için tek satır değişir. |
+| **D89** | `RulesProfile.ShortTimeoutsPerTeam = 3` | **KAPANDI → D98a** (M6 planlaması, 28 Eylül 2026; kullanıcı **5**'i, NBA gerçeğini seçti) | D83 yalnız **tipi** tanımladı, sayıyı değil. NBA'da 5'tir ama M5'te bunu bir sayı **uydurmak** olurdu; bu yüzden açık bırakıldı. 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısının parçası; `ConfigHash`'e girdiği için tek satır değişir. |
 | **D90** | `CommandValidator.ValidateForApplication` taktik/tempo için `null` döner; **throw etmez** | Uygulama kararı — **gerçek hata düzeltmesi** | İlk sürüm `default:` dalında `throw` vardı. ActionDecision sınırı **her aksiyonda** sunulduğu için tüm taktik komutları istisna fırlatıyordu — hiçbir taktik komutu uygulanamıyordu. "Bu türde ek kural yok" demek doğru davranıştır; **tanımsız** tür hata vermeye devam eder. |
 | **D91** | `CommandQueue.Settle` boş girdide aynı örneği döner | Uygulama kararı | Gözlemlenebilir "değişiklik yok" durumunu korur. |
 | **D92** | `Simulate` kalan komutları **eşleşen komutların kendi indeksleriyle** çıkarır; `RemoveRange(0, n)` **kullanılmaz** | Uygulama kararı — **gerçek hata düzeltmesi** | İlk sürüm filtrelenmiş listeden `n` komut siliyordu; yanlış komutları atıp sonrakileri kaydırıyordu. DeadBall substitution'ı hiç gönderilmiyor, maç sonunda "Expired" ile reddediliyordu. |
@@ -267,8 +267,32 @@ Motor tarafında alınan kararlar. Hepsi motor kuralıdır; ürün kararı deği
 
 ### M5 sonrası hâlâ açık
 
-- **D89** — `ShortTimeoutsPerTeam` sayısı (kaynaksız yer tutucu, onay bekliyor).
 - **D87** — `ImmutableArray<T>` içeren `record`'larda bozuk değer eşitliğinin **M7'de** çözülmesi.
-- **Q10** — GameForm dağılımı/birimi (M6).
+- **Q10** — GameForm dağılımı/birimi (M6 kapsamı dışında bırakıldı, D98b).
 - **Q12** — canlı maç süresi (M7).
-- **Q13–Q18** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri, sezon referansı.
+- **Q13–Q17, Q19** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri.
+
+## 14. M6 planlama kararları — 28 Eylül 2026
+
+Dört soru kullanıcıya soruldu, dördü de cevaplandı. Bunların **tamamı ürün
+kararıdır**; motor kuralı veya teknik zorunluluk değildir.
+
+| ID | Karar | Durum | Gerekçe |
+|---|---|---|---|
+| **D98a** | **`RulesProfile.ShortTimeoutsPerTeam = 5`** (NBA gerçeği). D89 böylece kapandı | Kullanıcı kararı | 06 §23'ün "sayılar özel oyun basitleştirmesidir" uyarısı bu sayıyı bir **kural** olmaktan çıkarıp **kaynaklı bir gerçek** haline getiriyor. M5'te 3 bir yer tutucuydu ve bilinçli olarak açık bırakıldı; kullanıcıya üç seçenek sunuldu (5 / 3 / hiç 20 sn timeout). 5 seçildi. `ConfigHash` değişir (tek satır). |
+| **D98b** | **M6 kapsamı = ölçüm + ilk 3 kalibrasyon adımı.** 10K ölçüm → 08 §8 adım 3'e kadar (temel şut/turnover/foul/rebound aileleri **sırayla**) → 100K doğrulama | Kullanıcı kararı | 09 "simulator ve kalibrasyon" diyor ve 08 §8 sekiz adım veriyor. Kullanıcıya üç kapsam sunuldu; orta seçildi. Sonuç: M6 biterken motor **ölçülmüş ve kısmen kalibre edilmiş** olur. 08 §8'in "aynı anda her şeyi değiştirme" kuralı nedeniyle en fazla **iki parametre ailesi** değiştirilir. **Q10 (GameForm) bu kapsamın dışında bırakıldı** ve açık kalıyor. |
+| **D98c** | **Q18 KAPANDI: gerçek veri referansı YOK.** 08 §6'nın metrikleri ölçülür, eşikler **iç tutarlılıktan** türetilir: mirror simetri, uç değer güvenliği, dominant strateji yokluğu, kalite farkı yönü, tempo sırası, home/away yer değiştirme. NBA sezonuyla karşılaştırma **raporda bulunmaz** | Kullanıcı kararı | 08 §7: "Şut hedefleri engine spec'tedir; **seçilmemiş NBA sezonunun gerçek ortalaması gibi sunulmaz**." Bu karar eşiği bir sezon verisine değil motorun kendi mantığına bağlar. **Bu "oyun gerçekçi" demek değildir** — sayısal olarak tutarlı ama oyuncuya tuhaf gelen bir motor bu kararla mümkündür. 08 §8 adım 8 (insan playtest'i) M6 dışıdır. Risk kayda geçti, gizlenmedi. |
+| **D100** | **T15 (diagnostics) M6'ya dahil.** Diagnostics açık/kapalı → **aynı domain outcome**; diagnostics **RNG tüketmez** ve **`ConfigHash`'e girmez** | Kullanıcı kararı | 08 T15 "M2/M6" diyor ve M2'de yazılamamıştı. M6 motorun **son ölçüm milestone'ı**; kalibrasyon sırasında kural hatalarını sıfırlamak için teşhis aracı gerekiyor. Kapsam sınırı: **yalnız sayaçlar**, yeni karar mekanizması değil — 05 §3'ün "etkisiz mekanizmayı gizleme" yasağını ihlal etmemek için her sayacın raporda **gerçekten gösterildiği** doğrulanacak. |
+
+### M6 planlama sırasında ölçülen gerçek (plan §3)
+
+Plan yazılmadan önce 100K ölçeği **tahmin edilmedi, ölçüldü**: geçici bir prob
+testi yazıldı, koşturuldu ve silindi.
+
+- Maç başına **1107 event** (max 1268), maç başına **4.62 ms**, 212.4 possession
+- 300 maçta **0 aborted**, 5 uzatma (%1.67)
+- 100K = **~462 sn** sıralı (süre sorun değil) ve **110.7 milyon event** (bellek sorun)
+
+**Sonuç:** 08 §119'un "summary mode" zorunluluğu bir optimizasyon değil,
+**dayanıklılık şartıdır** — tüm event'ler tutulursa ~21 GB. M6'nın ilk işi
+bellek sınırlı akış kipidir.

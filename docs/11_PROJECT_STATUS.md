@@ -1,17 +1,53 @@
 # Proje durumu ve oturum devri
 
-Son güncelleme: 27 Eylül 2026.
+Son güncelleme: 28 Eylül 2026.
 
 ## Şu anda
 
-- Aşama: Uygulama. **M5 tamamlandı ve doğrulandı.**
-- Aktif milestone: **M5 bitti → sırada M6 (CLI batch + 10K/100K deney ve denge adayı).**
-- Uygulama yetkisi: **M5 için verildi ve kullanıldı.** M6 için yetki **yok**.
-- Git: `main` == `origin/main` (`0fe9069`, M4 uygulaması; push sonrası doğrulandı).
-- Monte Carlo: **0 maç.** 324 test içinde 40–400 seed'li smoke koşular var; 10K/100K deneyi **çalıştırılmadı** (M6).
-- DB / runtime / hosting: seçilmedi. M1–M5 bunlara ihtiyaç duymadı.
+- Aşama: **Planlama.** M6 planı yazıldı ve **onay bekliyor**. M6 kodu **yazılmadı.**
+- Aktif milestone: **M6 (CLI batch + 10K/100K Monte Carlo + ilk kalibrasyon).**
+- Uygulama yetkisi: **M6 için YOK.** Kullanıcının ayrı bir "planı uygula" mesajı gerekiyor.
+- Git: `main` == `origin/main` == `ff0230d` (M5 uygulaması; push sonrası doğrulandı).
+  Bu oturumun değişiklikleri henüz commit edilmedi.
+- Monte Carlo: **0 maç.** 324 test içinde 40–400 seed'li smoke koşular var;
+  10K/100K deneyi **çalıştırılmadı** (M6).
+- DB / runtime / hosting: seçilmedi. M1–M6 planlaması bunlara ihtiyaç duymadı.
+- Test sayısı: **324** (değişmedi — bu oturumda kod yazılmadı).
 
-## Son oturumda (M5 uygulaması) yapılanlar
+## Son oturumda (M6 planlaması) yapılanlar
+
+- **`docs/plans/M6_IMPLEMENTATION_PLAN.md` yazıldı** (443 satır, 16 bölüm).
+  **Kod, migration, paket kurulumu, refactoring yapılmadı.**
+- **Dört ürün kararı kullanıcıdan alındı ve kilitlendi:**
+  - **D98a** — `ShortTimeoutsPerTeam = 5` (NBA). **D89 böylece KAPANDI** (M5'ten kalan borç).
+  - **D98b** — M6 kapsamı = **ölçüm + ilk 3 kalibrasyon adımı** (08 §8 adım 3'e kadar).
+    **Q10 (GameForm) kapsam dışında bırakıldı** ve açık kaldı.
+  - **D98c** — **Q18 KAPANDI:** gerçek veri referansı **yok**; eşikler **iç
+    tutarlılıktan** türetilir. NBA sezonuyla karşılaştırma raporda bulunmaz.
+  - **D100** — **T15 (diagnostics) M6'ya dahil.** Açık/kapalı → aynı domain
+    outcome; RNG tüketmez, `ConfigHash`'e girmez.
+- **100K ölçeği tahmin edilmedi, ölçüldü.** Geçici bir prob testi yazıldı,
+  koşturuldu ve **silindi**: 300 maçta maç başına **1107 event**, **4.62 ms**,
+  212.4 possession, **0 aborted**, %1.67 uzatma. → 100K ≈ **462 sn sıralı**
+  (süre sorun değil) ve **110.7 milyon event** (≈21 GB bellek — **sorun bu**).
+- **D33 gevşetilecek** (simulator argümansız kuralı) — plan kararı, henüz uygulanmadı.
+- Plan §14'te **bilinçli kapsam dışı** listesi ve §15'te **10 risk** kayıtlı.
+
+### Bu oturumda gerçekten çalıştırılan komutlar
+
+| Komut | Sonuç |
+|---|---|
+| Geçici `TempScaleProbeTests` (300 maç, Release) | **Beklenen şekilde FAIL** (`Assert.Fail` ile prob raporu yazdı) — ölçüm: 1107 event/maç, 4.62 ms/maç |
+| Prob dosyası silindi → `dotnet build -c Release` | Başarılı — **0 hata** |
+| `dotnet test DreamTeam.slnx -c Release` | Başarılı — **324/324** |
+| `git status --short` (prob kalıntısı) | **Temiz** |
+| docs/10 ve docs/11 bayt kontrolü | BOM yok, CR yok, U+FFFD yok (her ikisi) |
+
+**Not:** Bu oturumda `dotnet test -c Debug`, `dotnet list package`, yasaklı çağrı
+taraması ve `git diff` **koşturulmadı** — M6 kodu yazılmadığı için gerek yoktu.
+Son tam doğrulama M5 kapanışındadır (aşağıda).
+
+## Önceki oturumda (M5 uygulaması) yapılanlar
 
 - M5 planı onaylandı; **D79–D89** kilitlendi, **D90–D97** uygulama kararları olarak
   kayda geçti. **D78 ve Q11 kapandı.**
@@ -41,12 +77,13 @@ Son güncelleme: 27 Eylül 2026.
   substitution'ı hiç gönderilmiyordu) ve **D94** (komut bir adım gecikmeli
   uygulanıyordu).
 
-### Uygulama sırasında kullanıcıya açılan iki soru
+### M5 uygulaması sırasında kullanıcıya açılan iki soru
 
 1. **D96(a)** — Soru etiketi "normal basket sonrası pencere açılmaz" derken
    açıklaması isabetli basketi pencere sayıyordu. Kullanıcı açıklamayı onayladı:
    **pencere AÇILIR** (5+1 nokta).
-2. **D89** — `ShortTimeoutsPerTeam = 3` hâlâ **kaynaksız**; onay bekliyor.
+2. **D89** — `ShortTimeoutsPerTeam = 3` kaynaksızdı; **M6 planlamasında
+   kapandı → 5 (NBA), D98a.**
 
 ### Doğrulama kanıtı — gerçekten çalıştırılan komutlar
 
@@ -76,7 +113,7 @@ Seed 20260927, tek maç, argümansız simulator. Skor 112-118 ve 5 periyot; savu
 rotasyonu/kapanış modeli hâlâ yok. **10K/100K deneyi çalıştırılmadı; M6.**
 Bu argümansız koşuda **hiç komut gönderilmez** (D81: motor yönetir).
 
-## Son oturumda (M4 uygulaması) yapılanlar
+## M4 uygulamasında yapılanlar
 
 - M4 planı onaylandı; **D57–D68** kilitlendi, **D69–D78** uygulama kararları olarak kayda geçti.
 - **Oluşturulan motor dosyaları:** `Config/Tactics.cs` (3 enum + `TeamMatchSetup`), `Config/TacticsModel.cs`, `Config/DefenseModel.cs`, `Config/FatigueModel.cs`, `Config/PaceModel.cs`, `Core/PlayerMatchState.cs`, `Ratings/PlayerRatingTables.cs`, `Ratings/PlayerRatingCalculator.cs`, `Ratings/TeamRatingCalculator.cs`, `Tactics/OffensivePolicy.cs`, `Tactics/DefensivePolicy.cs`, `Actions/ShotQualityResolver.cs`, `Fatigue/FatigueCalculator.cs`.
@@ -85,7 +122,7 @@ Bu argümansız koşuda **hiç komut gönderilmez** (D81: motor yönetir).
 - **M1–M3 testleri güncellendi** (mekanik `TeamMatchSetup` geçişi + üç M3 varsayımının düzeltilmesi).
 - **10 gerçek hata bulundu ve düzeltildi**, hepsi regresyon testli. En kritik üçü: M3'ten kalan **kayıp savunma faulü** (D69), **enerjinin hiç düşmemesi** (D72) ve **yorgunluk kanalının fiilen ölü olması** (D73/D74 → `PerformanceMultiplier` ve `Interpolate` hataları).
 
-## Son oturumda (M3 uygulaması) yapılanlar
+## M3 uygulamasında yapılanlar
 
 - M3 planı onaylandı, **D43** (`NoLegalSubstitute` → `Aborted`) teyit edildi, kod yazıldı.
 - **Oluşturulan motor dosyaları:** `Core/PendingShot.cs`, `Core/PendingFreeThrowSeries.cs`, `Core/FoulCounters.cs`, `Actions/FoulResolver.cs`, `Actions/BlockResolver.cs`, `Actions/FreeThrowResolver.cs`, `Actions/RimContactResolver.cs`, `Rules/ClockResetPolicy.cs`, `Rules/PeriodController.cs`, `Rules/EligibilityPolicy.cs`.
@@ -169,26 +206,18 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 ## Kararlar
 
-- D31–D39 ve M2'de bulunan 5 gerçek kod hatası: `docs/10_DECISIONS_AND_OPEN_QUESTIONS.md` bölüm 7.
-- D40–D45 (M3 kilit), D46–D56 (M3 uygulama): aynı dosya bölüm 8 ve 9.
 - **D57–D68** (M4 kilit kararları): bölüm 10.
 - **D69–D78** (M4 uygulama kararları): bölüm 11. D78 **artık açık değil** → D79.
-- **D79–D89** (M5 planlama kararları): bölüm 12. **D89 açık** (kaynaksız sayı).
+- **D79–D89** (M5 kilit kararları): bölüm 12. **D89 artık açık değil → D98a.**
+- **D90–D97** (M5 uygulama kararları): bölüm 13.
+- **D98a–D98c, D100** (M6 planlama kararları): bölüm 14. **D89 ve Q18 kapandı.**
 - M3 sapmaları ve 9 hata: `docs/plans/M3_IMPLEMENTATION_PLAN.md` §12.
 - M4 sapmaları (10) ve 10 hata: `docs/plans/M4_IMPLEMENTATION_PLAN.md` §12 ve §13.
-- Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, Q07, Q08, Q09,
-  Q10'un "M4'te kapalı" yarısı, **Q11**.
-- Açık kalan: **D89** (`ShortTimeoutsPerTeam` sayısı — kaynaksız yer tutucu),
-  **Q10** (GameForm dağılımı/birimi — M6), Q12, Q13–Q18.
-
-- **D79–D89** (M5 kilit kararları): `docs/10` bölüm 12. **D82 uygulama sırasında
-  netleştirildi (D96)**; **D89 açık** (kaynaksız sayı).
-- **D90–D97** (M5 uygulama kararları): `docs/10` bölüm 13.
 - M5 sapmaları (12) ve 6 hata: `docs/plans/M5_IMPLEMENTATION_PLAN.md` §16 ve §17.
 - Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, Q07, Q08, Q09,
-  Q10'un "M4'te kapalı" yarısı, **Q11**.
-- Açık kalan: **D89** (timeout sayısı), **D87** (M7'de çözülecek), **Q10**,
-  **Q12**, Q13–Q18.
+  Q10'un "M4'te kapalı" yarısı, **Q11**, **Q18**.
+- Açık kalan: **D87** (M7'de çözülecek), **Q10** (GameForm dağılımı/birimi),
+  **Q12**, Q13–Q17, Q19.
 
 ## Kapsam dışı bırakılanlar (M3'te bilinçli olarak yok)
 
@@ -243,10 +272,11 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 1. **Cross-platform bit düzeyi eşitlik kanıtlanmadı** (D23 kapsamı dışı, M6'da ölçülecek).
 2. **Katsayılar kalibre değil.** M5 sonrası gözlenen tek maç 112-118, 5 periyot.
-   Savunma rotasyonu/kapanış modeli yok. 10K/100K deneyi **M6'da ve
+   Savunma rotasyonu/kapanış modeli yok. 10K/100K deneyi **M6'da
    çalıştırılmadı.**
 3. **T15 (diagnostics) hâlâ yazılamaz** — diagnostics yüzeyi yok. M5'te de
-   yazılmadı; **sahte "geçti" konulmadı.** M6'da eklenince test edilebilir.
+   yazılmadı; **sahte "geçti" konulmadı.** M6'ya alındı (D100); plan onay
+   bekliyor, yüzey henüz yok.
 4. **Serileştirme ölçüldü ve çalışıyor.** `System.Text.Json` sıfır paketle
    çalışıyor, `ImmutableArray<T>` ve `required`+`init` record round-trip'i doğru,
    RNG state 8 bayt ve kesin. **Kalan:** enum'lar varsayılan sayısal olurdu —
@@ -262,41 +292,60 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
    `Get-Content`/`Set-Content` çift kodlaması Türkçe karakterleri bozdu; 8 dosya
    kurtarıldı. Kaynak dosyalarda bundan sonra ASCII yorum kullanılacak; belge
    düzenlemesinde `[IO.File]::ReadAllText/WriteAllText` + `UTF8Encoding($false)`
-   kullanıldı ve bayt seviyesinde doğrulandı.
+   kullanıldı ve bayt seviyesinde doğrulandı. **M6'da yeni kaynak dosyalar
+   yazılırken bu kural geçerli.**
 8. **Çember teması şut kalitesine girmiyor.** `RimContactResolver` yalnız saat
    politikasını besliyor. İkinci tüketici hâlâ bağlanmadı; iki yerde ayrı etki
-   yazılırsa 05 §3'teki "iki kat sayma" hatasına döner. M6 adayı.
+   yazılırsa 05 §3'teki "iki kat sayma" hatasına döner. **M6 kapsamı dışında.**
 9. **`ImmutableArray<T>` içeren `record`'larda değer eşitliği bozuk** (D87,
    **ölçüldü**). `Team`, `TeamMatchSetup`, `MatchSetup`, `MatchState` etkilenir.
    M5'te `MatchStateFingerprint` ile aşıldı; **M7'de kalıcı katmanda çözülmeli**
    (03 §"Match completion idempotent").
-10. **`ShortTimeoutsPerTeam = 3` kaynaktan gelmiyor** (D89). Yer tutucu; kullanıcı
-    onayı bekliyor.
+10. **`ShortTimeoutsPerTeam = 3` kaynaktan gelmiyordu** (D89) — **KAPANDI**:
+    kullanıcı **5**'i (NBA) seçti (D98a). Değişiklik M6 uygulamasında yapılacak;
+    `ConfigHash` değişecek. **Henüz uygulanmadı.**
 11. **Timeout canlı topta uygulanmıyor** (D84 sapması). Üründe hissedilir; 06 §23'e
     dayanıyor ve simulator raporunda açıkça yazılıyor.
 12. **AI fallback = motor yönetir** (D81). Yönetici hiç komut göndermezse maç motor
     tarafından oynanır. "Devraldım" modu ürün kararı olarak M7'ye bırakıldı.
-13. **`MatchResult` tüm event'leri bellekte tutuyor** ve M5'te 6 timeout alanı
-    eklendi. 08 §8'in bellek sınırlı özet kipi M6'nın işi.
+13. **`MatchResult` tüm event'leri bellekte tutuyor.** **Bu oturumda ölçüldü:**
+    maç başına 1107 event → 100K'da 110.7 milyon event ≈ **21 GB**.
+    08 §8'in bellek sınırlı özet kipi M6'nın **ilk işi**; bir optimizasyon değil,
+    dayanıklılık şartı. Süre tarafı sorun değil (100K ≈ 462 sn sıralı).
 14. **Snapshot boyutu**: `MatchState` tüm kadroyu taşıyor; 100K deneyde snapshot
     maliyeti ölçülmedi. M6.
+15. **"NBA gibisi" iddiası riski** (D98c). M6'da **ölçülen sayılar gerçek veriyle
+    karşılaştırılmayacak**; eşikler iç tutarlılıktan türetilecek. Sayısal olarak
+    tutarlı ama oyuncuya tuhaf gelen bir motor bu kararla **mümkündür** — 08 §8
+    adım 8 (insan playtest'i) M6 dışıdır. Risk kayda geçti, gizlenmedi.
+16. **Ayrıştırıcı paketi riski.** CLI için `System.CommandLine` kullanılırsa
+    sıfır paket kısıtı bozulur. Plan elle ayrıştırıcı öngörüyor; kabul kriterinde
+    `dotnet list package` yeniden sıfır olmalı.
+17. **Paralellik `Order`-bağımlılığı sızdırabilir** (`HashSet`/`Dictionary` yineleme
+    sırası). T17 bunu yakalar; plan §6'da maç tohumunun **stable index'ten**
+    türetilmesi kuralı yazılı.
 
 ## Sonraki tek uygulanabilir görev
 
-**M6 planını yazmak** — kod yazmadan `docs/plans/M6_IMPLEMENTATION_PLAN.md`. Kapsam:
+**M6 planını onaylamak ve uygulama yetkisi istemek.**
 
-- **CLI batch** (`DreamTeam.Simulator` genişlemesi): argümansız D33 kuralı
-  gevşer; seed aralığı, maç sayısı ve çıktı biçimi.
-- **10K/100K deney**: ilk gerçek Monte Carlo ölçümü. `MatchResult` hâlâ tüm
-  event'leri bellekte tutuyor; **bellek sınırlı özet kipi** (08 §8) M6'nın işi.
-- **Denge adayı raporu**: ortalama skor, possession sayısı, FT oranı, tempo
-  dağılımı, enerji dağılımı; tekrarlanabilirlik.
-- **T15** (diagnostics açık/kapalı → aynı domain outcome) burada yazılabilir:
-  diagnostics yüzeyi M6'da eklenir.
-- **Q10** — GameForm dağılımı/birimi burada çözülür.
-- **Q18** — sezon referansı ve sayısal release eşikleri.
-- Katsayı kalibrasyonu: 10K ölçümü → ayar → 100K doğrulama. **M5'te hiç
-  ölçülmedi.**
+`docs/plans/M6_IMPLEMENTATION_PLAN.md` yazıldı; §0'daki dört karar kilitli.
+Kullanıcı "planı uygula" dediğinde M6 kodu yazılacak. İlk uygulanacak işler:
+
+1. `config/engine/` ve `fixtures/teams/` dizinleri + sürümlü baseline JSON.
+2. **Bellek sınırlı özet kipi** (plan §5) — `BoxScoreProjector.Accumulate`,
+   `MatchRunner` (`Create`+`Advance`, `MatchResult` **yok**).
+3. `ShortTimeoutsPerTeam = 3 → 5` (D98a) — tek satır, `ConfigHash` değişir.
+4. `Cli/CommandLine.cs` (elle ayrıştırıcı, **paket yok**), `single` / `batch`.
+5. `MatchSummary` / `SummaryAccumulator` / `JsonExporter` / `CsvExporter` /
+   `ExperimentManifest` (08 §4).
+6. Diagnostics yüzeyi + **T15** (D100).
+7. **T17** (paralel = sıralı) ve **T18** (özet = event-derived).
+8. 10K koşu → 08 §8 adım 3'e kadar kalibrasyon → **100K holdout koşusu**.
+
+**Q10 (GameForm) bu listede yok** — D98b gereği M6 kapsamı dışında.
+**Uygulama yetkisi olmadan kod yazılmayacak.**
+
 
 ## Her oturum sonunda doldurulacak kayıt
 
