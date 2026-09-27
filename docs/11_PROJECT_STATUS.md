@@ -4,12 +4,20 @@ Son güncelleme: 27 Eylül 2026.
 
 ## Şu anda
 
-- Aşama: Uygulama. **M2 tamamlandı ve doğrulandı.**
-- Aktif milestone: **M2 bitti → sırada M3 (kural bütünlüğü: foul/FT/clock edge case/OT)**.
-- Uygulama yetkisi: **M2 için verildi ve kullanıldı.** M3 için yetki **yok**; M3 başlamadan önce ayrıca onay gerekir.
-- Git: `main` == `origin/main` (M2 commit'i ile eşitlendi; push sonrası doğrulandı).
-- Monte Carlo: **0 maç.** M2'de 121 test içinde çok seed'li smoke koşular var (60–120 seed), ama 10K/100K deneyi **çalıştırılmadı**; bu M6'nın işidir.
-- DB / runtime / hosting: seçilmedi. M1 ve M2 bunlara ihtiyaç duymadı.
+- Aşama: Planlama. **M2 tamamlandı; M3 planı yazıldı ve onay bekliyor.**
+- Aktif milestone: **M3 (kural bütünlüğü) — plan hazır, uygulama yetkisi yok.**
+- Uygulama yetkisi: **M2 için verildi ve kullanıldı.** M3 için yetki **yok**.
+- Git: `main` == `origin/main` (`d163d76`).
+- Monte Carlo: **0 maç.** 121 test içinde 60–120 seed'li smoke koşular var; 10K/100K deneyi **çalıştırılmadı** (M6).
+- DB / runtime / hosting: seçilmedi. M1–M3 bunlara ihtiyaç duymadı.
+
+## Son oturumda (M3 planı) yapılanlar
+
+- Repo ve önceki doğrulamalar tekrar kontrol edildi: çalışma ağacı temiz, ahead/behind 0/0, **121/121 test yeşil**, M1 dosyalarında değişiklik yok. **Hiçbir tamamlanmış iş yeniden üretilmedi.**
+- Q07 kilitlendi: **D40** basit bonus (5 faul → 2 FT, 6 faulde çıkış), **D41** otomatik yedekleme, **D42** tie-break ve uzatma başı sıfırlaması.
+- `docs/plans/M3_IMPLEMENTATION_PLAN.md` yazıldı: 11 bölüm, tek kanonik karar ağacı ve sabit RNG çağrı sırası, 28 test senaryosu, kabul kriterleri.
+- Beyan edilmiş sözleşme değişiklikleri (D44) ve RNG sırası yan etkisi (D45) kayda geçirildi.
+- Onay bekleyen tek açık alt karar: **D43** — yasal yedek yoksa `Aborted` (motor kazanan uydurmaz).
 
 ## M0 ve M1 özeti
 
@@ -82,13 +90,14 @@ Son güncelleme: 27 Eylül 2026.
 
 ## Sonraki tek uygulanabilir görev
 
-**M3 planını hazırlamak** — kod yazmadan `docs/plans/M3_IMPLEMENTATION_PLAN.md`. Kapsam:
+**M3 planını onaylamak**, ardından uygulama yetkisi verildiğinde
+`docs/plans/M3_IMPLEMENTATION_PLAN.md`'yi uygulamak. Kapsam:
 
-- `Rules/RulesProfile.cs` genişlemesi, `FoulResolver`, `FreeThrowResolver`, `ClockResetPolicy`, `PeriodController`, `EligibilityPolicy`.
-- `MatchPhase`'e `ShotPending` ve `FreeThrows` eklenmesi; `EventSchemaVersion` 1 → 2.
-- Q07 kararı: bonus, foul-out, beşten az uygun oyuncu için terminal policy.
-- 06 §6'da kalan shot-clock reset satırları, horn/release tie-break.
-- M2'nin `MatchSetup`, `MatchClock`, `MatchState`, `Advance` sözleşmeleri **değiştirilmemeli**; üstüne binmeli.
+- `FoulResolver`, `FreeThrowResolver`, `BlockResolver`, `RimContactResolver`, `ClockResetPolicy`, `PeriodController`, `EligibilityPolicy`.
+- `MatchPhase` +`ShotPending`/`FreeThrows`; `MatchState` +`PendingShot`/`PendingFrees`; `TeamMatchState` +`FoulOutPlayerIds`; `EventSchemaVersion` 1→2.
+- 5 yeni event türü: `Foul`, `FreeThrowAttempt`, `FreeThrowMade`, `FreeThrowMissed`, `Block`.
+- T04–T11 senaryoları, uzatma, foul-out yedeklemesi.
+- `MatchSetup`, `MatchClock`, `Advance` imzası, `MatchSetupValidator` **dokunulmaz**.
 
 ## Her oturum sonunda doldurulacak kayıt
 

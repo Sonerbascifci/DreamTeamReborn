@@ -67,7 +67,7 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q04 | Sade profil mi tam NBA/FIBA mı? | 06 belgesindeki açıkça sade profil | M0/M2 | **Çözüldü → D31** |
 | Q05 | Start possession ve periyot açılışı? | Home/away simetrisini koruyan açık protokol | M2 | **Çözüldü → D32** |
 | Q06 | Tüm olasılık katsayıları ve eylem süreleri? | Baseline config v0.1, ölçümle tuning | M2/M4 | **Kısmen çözüldü → D35, D39.** Yapı ve başlangıç değerleri kilitli; **sayısal kalibrasyon M6'ya kaldı** |
-| Q07 | Bonus, foul-out, az oyuncu terminal policy? | Sade profil; forfeit/abort farkı açık | M3 | Açık |
+| Q07 | Bonus, foul-out, az oyuncu terminal policy? | Sade profil; forfeit/abort farkı açık | M3 | **Çözüldü → D40, D41, D42, D43** |
 | Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | Açık |
 | Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | Açık |
 | Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | Açık |
@@ -129,3 +129,16 @@ Kullanıcı 27 Eylül 2026'da `docs/plans/M2_IMPLEMENTATION_PLAN.md` dosyasını
 | İsabetli şutlarda `3PA` sayılmıyordu | "3P 4-0" gibi imkânsız satırlar | İki sayacın birlikte yürütülmesi | `ShotCountersAreInternallyConsistent` |
 | `MatchClock.BeginPeriod` toplam süreyi sıfırliyordu | Rapor 2.880 s yerine 720 s gösteriyordu | `BeginPeriod` örnek metoduna çevrildi, elapsed korunuyor | `EngineGameClockIsMonotonicAndEndsAtZero` |
 | Şutla sonuçlanmayan aksiyon event üretmiyordu | Motor "ilerleme yok" güvenlik ağıyla abort oldu | `ActionCompleted` event'i eklendi | `EveryProducedEventIsObservable` |
+
+## 8. M3 kararları — 27 Eylül 2026
+
+Kullanıcı M3'ün kilit kararlarını 27 Eylül 2026'da onayladı. Uygulama kodu yazılmadı.
+
+| ID | Karar | Durum | Gerekçe |
+|---|---|---|---|
+| D40 | **Bonus: basit profil.** Periyot içinde 5. sayılan savunma faulünden itibaren 2 FT. Kişisel faul sınırı **6**; 6. faulde oyuncu sahadan çıkar | Kullanıcı onayı | 06 §1 devir önerisi. NBA 3 saniye kuralı ve son 2 dakika istisnaları kapsam dışı; tam NBA sadakati iddiası yok. |
+| D41 | **Foul-out sonrası otomatik yedekleme**: en uygun yasal yedek sahaya girer; yasal yedek yoksa açık terminal policy | Kullanıcı onayı | 06 §7 devir önerisi. Kullanıcı çevrimdışı kalsa maç sonsuza kadar durmaz. |
+| D42 | **Tie-break ve periyot başı**: `releaseTime < expiryTime` geçerli, eşitlikte ihlal. Her uzatmada hücum saati 24 s'e döner, takım faul sayacı sıfırlanır | Kullanıcı onayı | 06 §1 ve §2 devir önerisi. 06 §6'daki belirsiz "periyot başı" satırını kapatır. |
+| D43 | Yasal yedek yoksa `MatchAborted` (`NoLegalSubstitute`). Motor **forfeit kazananı uydurmaz** | Öneri — plan onayında teyit edilecek | Forfeit basketbol kuralı değil ürün kararıdır; motor kural motorudur. 06 §121 gereği bu maçlar win-rate paydasına katılmaz. M7'de ürün kararına dönüşebilir. |
+| D44 | M3'te değişecek beyan edilmiş sözleşmeler: `MatchPhase` +2 faz, `MatchState` +2 nullable alan, `TeamMatchState` +`FoulOutPlayerIds`, `EventSchemaVersion` 1→2 | Uygulama kararı — plan onayına bağlı | 06 §3 ana akışı bu fazları gerektirir; M5 replay'in serileştireceği devam edilebilir durum bunlar. `MatchSetup`, `MatchClock`, `Advance` imzası, `MatchSetupValidator` **dokunulmaz**. |
+| D45 | M3 yeni RNG çekilişleri ekler; **M2 sonuçları değişir** | Uygulama kararı | Beklenen. Hiçbir test golden sabit içermez — aynı build içinde iki koşu karşılaştırılır. M6'da golden sequence sabitlenecek. |
