@@ -68,9 +68,9 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q05 | Start possession ve periyot açılışı? | Home/away simetrisini koruyan açık protokol | M2 | **Çözüldü → D32** |
 | Q06 | Tüm olasılık katsayıları ve eylem süreleri? | Baseline config v0.1, ölçümle tuning | M2/M4 | **Kısmen çözüldü → D35, D39.** Yapı ve başlangıç değerleri kilitli; **sayısal kalibrasyon M6'ya kaldı** |
 | Q07 | Bonus, foul-out, az oyuncu terminal policy? | Sade profil; forfeit/abort farkı açık | M3 | **Çözüldü → D40, D41, D42, D43** |
-| Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | Açık |
-| Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | Açık |
-| Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | Açık |
+| Q08 | Defense enum mu scheme+coverage mı? | Dışarıda dört seçenek, içeride policy paketi | M4 | **Çözüldü → D57** |
+| Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | **Çözüldü → D58, D62** |
+| Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | **Kısmen çözüldü → D60 (M4'te kapalı); dağılım/birim M6'ya açık** |
 | Q11 | Timeout hakkı, legal pencereler, late game? | 06/07 taslağı üzerinden netleştir | M5 | Açık |
 | Q12 | Canlı maç kaç gerçek dakika sürmeli? | Simülasyon hızından bağımsız ürün ayarı | M7 | Açık |
 | Q13 | PostgreSQL/MSSQL, auth ve hosting? | Ekip/ortam ve gerçek gereksinimle seç | M7 | Açık — M1'i engellemedi |
@@ -161,3 +161,23 @@ kendisine ait kararlar.
 | D54 | **`DeadBall` fazı hiçbir adım sınırında kalıcı değildir** | Uygulama kararı | Inbound, onu doğuran event'le aynı adımda atomik çözülür. Faz kalıcı olsaydı event üretmeyen bir adım oluşur ve motorun "ilerleme yok" ağı devreye girerdi. Faz sözlükte tanımlı kalır (04 sözlüğü), akışta kullanılmaz. |
 | D55 | M2 testlerinin "ilk beş" invariant'ı "kadro" sınırına genişletildi (`OnlyRosterPlayersAppearInTheBoxScore`, `EveryEventAttributedToAPlayerIsInTheRoster`) | Uygulama kararı | M3'te foul-out yedeklemesi oyuncuyu değiştirir; değişmeyen sınır kadrodur. Test sayısı korundu, yalnız iki testin öncülü netleşti. |
 | D56 | `FoulProbabilityPerAction = 0.12` başlangıç değeri | Uygulama kararı — **kalibre değil** | 0.05 ile gözlenen takım başına PF ~9 idi (hedef aralık dışı). 0.12 ile takım başına 10–15 PF. KALİBRE EDİLMEMİŞ; M6 ölçümü. |
+
+## 10. M4 planlama kararları — 27 Eylül 2026
+
+Kullanıcı M4'ün kilit kararlarını 27 Eylül 2026'da onayladı. **Uygulama kodu
+yazılmadı**; `docs/plans/M4_IMPLEMENTATION_PLAN.md` hazır ve uygulama yetkisi bekliyor.
+
+| ID | Karar | Durum | Gerekçe |
+|---|---|---|---|
+| D57 | **Savunma: dört paket policy.** `ManToMan`, `Drop`, `Switch`, `ZonePackPaint`; her biri kendi içinde eşleşme + PnR coverage + paint/closeout tercihini taşır | Kullanıcı onayı | Q08'in devir önerisi (05 §6). 02 §6'daki dört UI seçeneğiyle birebir uyum. İç model netleşir, dış model basit kalır. |
+| D58 | **Yorgunluk cezası yalnız isabet logitsine (`z`) girer**: `z = logit(base) + βSkill·skill + βQuality·quality − βFatigue·fatigueLoad` | Kullanıcı onayı | Q09. 05 §7 şablonu. `PlayerRatingCalculator` imzasında `energy` **yoktur**; bu yüzden 05 §12'nin "iki kez cezalandırma" yasağı **yapısal** olarak sağlanır — aynı etkiyi iki kanaldan geçecek kod yolu yoktur. Savunma ve taktik ayrı kanaldan `ShotQuality`'ye girer. |
+| D59 | **Tempo iki kanaldan geçer**: aksiyon süresi çarpanı (Slow 1.35 / Normal 1.0 / Fast 0.78) + enerji drain çarpanı (0.88 / 1.0 / 1.15). **Top kaybı etkisi yok** | Kullanıcı onayı | 05 §131 pace'i top kaybı risk faktörü sayıyor ama "her durumda top kaybı yaratmak zorunda değildir" diye uyarıyor. Top kaybı kanalı savunma policy'sine ait (D57); üçüncü kanal çift sayma riskini yükseltirdi. |
+| D60 | **GameForm M4'te kapalı.** `PlayerMatchState` form alanı içermez | Kullanıcı onayı | Q10'un devir önerisi (05 §13). D34'teki "etkisiz mekanizmayı gizleme" yasağı: 0 olan bir alan eklemek ölü veridir. Dağılım/birim M6'ya açık kalır. |
+| D61 | **`TeamMatchSetup` tipi materialize edilir.** `MatchSetup.Home`/`Away` `Team` → `TeamMatchSetup`; `HomeLineup`/`AwayLineup` kaldırılır | Uygulama kararı — plan onayına bağlı | 04 §25 `TeamMatchSetup`'i "Team snapshot, başlangıç lineup, tactics, pace" olarak tanımlar ve "başlangıçta geçerli" işaretler. Düz alanlarla devam edilirse M5'te `MatchSetup`/`TeamMatchState` alan paralelliği doğar ve hangisinin yetkili olduğu belirsizleşir. **Maliyet: M1–M3 testlerinde mekanik güncelleme, anlamsal değişiklik yok.** |
+| D62 | **`Balanced` dağılımı 05 §5'in PickAndRoll örneğini birebir alır** | Uygulama kararı | 05 §5 varsayılan dağılımı PickAndRoll olarak verir. M3'ün düz vektörünü (0.45/0.15/0.15/0.10/0.10/0.05) "tarafsız" bir dağılımla değiştirmek kaynağı olmayan bir tercih olurdu. **M3 davranışı aynen korunur**; taktik etkisi diğer üç dağılımla ölçülür. Yansızlık `NeutralMirror` fixture'ının konusudur, `Balanced` taktiğinin değil. |
+| D63 | **Enerji performans çarpanı 05 §12 tablosuna `Energy 0 → 0.65` ankrajı eklenir**; aralar doğrusal interpolasyonla doldurulur, `Energy` her zaman `[0,100]`'e kırpılır | Uygulama kararı | 05 §12 tablosu 10'da bitiyor ve "0 energy endpoint'i açık" diyor. Sıfır bir **nokta** değil bir **taban** olmalı; aksi halde son anda ani ve adaletsiz bir çöküş olur. Tablo `FatigueModel`'de **veri** olarak tutulur, formül kodda değil. |
+| D64 | **Enerji yalnız şut kanalına girer.** Asist/pas, ribaund, turnover, blok çekilişlerine yayılmaz | Uygulama kararı | 05 §12 tek bir yorgunluk cezası istiyor. Yaymak kan sayısını çoğaltır ve kalibrasyonu bulanıklaştırır. |
+| D65 | **Sıralama ağırlığı**: `weight = max(0.01, 1 + SelectionSpread × NormalizeSkill(composite))`, `SelectionSpread = 0.6` | Uygulama kararı | 05 §76 "ham rating çarpanı aşırı yoğunlaşma üretir" diyor. M3'ün `attribute + 1` kuralı bu formülün `SelectionSpread = 1.0` halidir; 0.6 ile daraltılmıştır. Toplam sıfır olamaz ve hiçbir oyuncu seçilemez olmaz garantileri korunur. |
+| D66 | **M4'te olmayan savunma/çözüm mekanizmaları kayda geçirildi**: steal atfedimi, transition aksiyonu, mismatch, takım ribaundu, enerji→asist | Uygulama kararı | Hiçbiri 09'un M4 kabul listesinde sayılmıyor. Sessizce düşürülmüyor — gerekçesiyle listeleniyor. Steal ve transition M5/M6 adayıdır. |
+| D67 | **`ShotAttemptPayload` +`ShotQuality` +`ShooterEnergy` alanları** | Uygulama kararı | M4'ün kabul kriteri "policy değişimi beklenen karışımı etkiliyor" — kalite ve enerji event'ten **gözlenebilir** olmazsa bu test yazılamaz. 08 §88'in istediği enerji dağılımı ve M6 kalibrasyonu da bu alanlara bağlı. İki `int`; event bellek maliyeti ihmal edilebilir. |
+| D68 | **Birincil savunmacı tek çekilişle seçilir** ve faul, blok, kalite eşleşmesi için **aynı kişi** kullanılır; koşula bağlı savunmacı çekilişleri kaldırıldı | Uygulama kararı — gerçek hata düzeltmesi | M3'te bir aksiyonda iki ayrı savunmacı çekilişi vardı (`PickDefender` faul için, blok kendi ağırlığıyla). Bu 05 §127'nin yasakladığı "aynı olayı iki kez örnekleme" desenidir ve faturaların farklı oyunculara yazılmasına yol açabilir. M4'te çağrı sayısı **sabit +1** olur (her aksiyonda bir savunmacı), koşul bağımlı konum kaymaları biter. |

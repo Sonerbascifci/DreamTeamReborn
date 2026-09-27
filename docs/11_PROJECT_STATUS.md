@@ -4,12 +4,20 @@ Son güncelleme: 27 Eylül 2026.
 
 ## Şu anda
 
-- Aşama: Uygulama. **M3 tamamlandı ve doğrulandı.**
-- Aktif milestone: **M3 bitti → sırada M4 (oyuncu/taktik kararlarının etkisi).**
-- Uygulama yetkisi: **M3 için verildi ve kullanıldı** (plan onaylandı, D43 teyit edildi). M4 için yetki **yok**.
-- Git: `main` == `origin/main` (M3 commit'i ile eşitlendi; push sonrası doğrulandı).
+- Aşama: Planlama. **M3 tamamlandı; M4 planı yazıldı ve onay bekliyor.**
+- Aktif milestone: **M4 (oyuncu/taktik kararlarının etkisi) — plan hazır, uygulama yetkisi yok.**
+- Uygulama yetkisi: **M3 için verildi ve kullanıldı.** M4 için yetki **yok**.
+- Git: `main` == `origin/main` (`3d6caba`).
 - Monte Carlo: **0 maç.** 158 test içinde 40–400 seed'li smoke koşular var; 10K/100K deneyi **çalıştırılmadı** (M6).
-- DB / runtime / hosting: seçilmedi. M1–M3 bunlara ihtiyaç duymadı.
+- DB / runtime / hosting: seçilmedi. M1–M4 bunlara ihtiyaç duymadı.
+
+## Son oturumda (M4 planlaması) yapılanlar
+
+- Repo ve M3 doğrulaması tekrar kontrol edildi: çalışma ağacı temiz, ahead/behind 0/0, **158/158 test yeşil**. **Hiçbir tamamlanmış iş yeniden üretilmedi.**
+- Q07 zaten M3'te kapanmıştı. Bu oturumda **Q08, Q09, Q10** için karar alındı ve **Q08/Q09 tamamen, Q10 kısmen** kapandı.
+- `docs/plans/M4_IMPLEMENTATION_PLAN.md` yazıldı: 13 bölüm, M4'ün dürüst mevcut-durum tespiti, beyan edilen sözleşme değişiklikleri, RNG çağrı sırası revizyonu, 26 test senaryosu, bilinçli basitleştirmeler ve riskler.
+- Kararlar **D57–D68** kayda geçirildi.
+- **Kod yazılmadı.** Onay bekleyen tek şey: M4 planının uygulanmasına yetki.
 
 ## Son oturumda (M3 uygulaması) yapılanlar
 
@@ -97,9 +105,10 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 - D31–D39 ve M2'de bulunan 5 gerçek kod hatası: `docs/10_DECISIONS_AND_OPEN_QUESTIONS.md` bölüm 7.
 - D40–D45 (M3 kilit kararları) ve D46–D56 (M3 uygulama kararları): aynı dosya bölüm 8 ve 9.
+- **D57–D68** (M4 planlama kararları): aynı dosya bölüm 10.
 - M3 plan sapmaları ve bulunan 9 hata: `docs/plans/M3_IMPLEMENTATION_PLAN.md` §12.
-- Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, **Q07** (D40–D43).
-- Açık kalan: Q08–Q11, Q13–Q18. **Q10** (`GameForm`) M4 kapsamına girdi.
+- Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, Q07, **Q08, Q09**; **Q10'un "M4'te kapalı" yarısı** (dağılım/birim M6'ya açık).
+- Açık kalan: **Q10** (GameForm dağılımı/birimi — M6), Q11, Q13–Q18.
 
 ## Kapsam dışı bırakılanlar (M3'te bilinçli olarak yok)
 
@@ -153,15 +162,19 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 ## Sonraki tek uygulanabilir görev
 
-**M4 planını yazmak** — kod yazmadan `docs/plans/M4_IMPLEMENTATION_PLAN.md`. Kapsam:
+**M4 planını onaylamak**, ardından uygulama yetkisi verildiğinde
+`docs/plans/M4_IMPLEMENTATION_PLAN.md`'yi uygulamak. Kapsam:
 
-- Tactics/pace `MatchSetup` alanları (D34'te M4'e bırakıldı; inert veri olmasın diye aynı milestone'da).
-- Savunma çözümü: blok şu an rastgele; savunma rating'leri şut kalitesine girmeli.
-- Composite rating'ler ve OVR'nin **girdi** tarafı (D23/D24: OVR çözüm girdisi değildir; T03 ancak burada uygulanabilir).
-- Enerji/stamina ve `GameForm` (Q10).
-- `EligibilityPolicy`'nin yedek seçimi gerçek rol mantığına bağlanır (D47).
-- `RimContactResolver`'ın ikinci tüketicisi: çember teması şut kalitesine girer (risk 9).
-- `MatchSetup`, `MatchClock`, `Advance` imzası, `MatchSetupValidator` **korunur** — tactics/pace alanları hariç.
+- `TeamMatchSetup` (D61): `MatchSetup.Home`/`Away` tipi değişir, `HomeLineup`/`AwayLineup` kaldırılır. **M1–M3 testlerinde mekanik güncelleme gerekir.**
+- `OffensiveTactic` (4), `DefensiveTactic` (4), `Pace` (3) enum'ları; `TacticsModel` ile 4 hücum dağılımı.
+- `PlayerRatingCalculator` (bounded composite'ler) + `TeamRatingCalculator` (OVR, gösterim amaçlı) → **T03 uygulanabilir hâle gelir.**
+- `ShotQualityResolver` + `DefensivePolicy` (D57): savunma üç kanaldan etki eder (kalite, blok, baskı→top kaybı, disiplin→faul).
+- `PlayerMatchState` + `FatigueCalculator` (D58, D63, D64): enerji `[0,100]`, dakika muhasebesi → **T12 uygulanabilir hâle gelir.**
+- Tempo: aksiyon süresi + enerji drain çarpanı (D59). Top kaybı **etkilenmez**.
+- `BlockResolver` sabit olasılıktan rating türevine geçer; `TurnoverResolver` ve `FoulResolver` savunma kanalına girer.
+- `ShotAttemptPayload` +`ShotQuality`, +`ShooterEnergy` (D67); `EventSchemaVersion` 2→3.
+- Birincil savunmacı tek çekilişe iner (D68) — çağrı sayısı sabit +1, koşullu çekilişler kalkar.
+- `MatchClock`, `IRandomSource`, `SeededRandom`, `Advance` imzası **korunur**. `MatchSetupValidator` genişler (taktik/pace doğrulaması).
 
 ## Her oturum sonunda doldurulacak kayıt
 
