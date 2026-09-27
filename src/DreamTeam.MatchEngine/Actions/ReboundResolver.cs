@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using DreamTeam.Domain.Players;
 using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Core;
+using DreamTeam.MatchEngine.Ratings;
 using DreamTeam.MatchEngine.Randomness;
 
 namespace DreamTeam.MatchEngine.Actions;
@@ -28,11 +29,15 @@ public readonly record struct ReboundOutcome(bool Offensive, Guid RebounderId);
 public sealed class ReboundResolver
 {
     private readonly ActionModel _model;
+    private readonly PlayerRatingCalculator _ratings;
 
-    public ReboundResolver(ActionModel model)
+    public ReboundResolver(ActionModel model, PlayerRatingCalculator ratings)
     {
         ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(ratings);
+
         _model = model;
+        _ratings = ratings;
     }
 
     public ReboundOutcome Resolve(ImmutableArray<Player> offensiveOnCourt, IRandomSource random)
@@ -43,9 +48,14 @@ public sealed class ReboundResolver
         }
 
         var offensive = random.NextDouble() < _model.OffensiveReboundProbability;
+
+        // D65: ribaund alacak kisi secimi bounded composite uzerinden. 05 §10
+        // ayrica "ucluk miss'inde guard, ic miss'inde uzunlar lehine" konum
+        // agirligi oneriyor; bu POSITION modeli gerektirir ve D35 pozisyon cezasini
+        // yasakliyor. Bu yuzden M4'te uygulanmaz ve kayda gecer (D66).
         var rebounder = WeightedSelector.Select(
             offensiveOnCourt,
-            player => player.Ratings.Rebounding + 1.0,
+            player => _ratings.SelectionWeight(PlayerRatingTables.Rebounding(player.Ratings)),
             random);
 
         return new ReboundOutcome(offensive, rebounder.Id);

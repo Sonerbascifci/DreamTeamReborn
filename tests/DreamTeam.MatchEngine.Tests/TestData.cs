@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using DreamTeam.Domain.Players;
 using DreamTeam.Domain.Teams;
+using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Core;
 using DreamTeam.MatchEngine.Randomness;
 
@@ -84,6 +85,11 @@ internal static class TestData
         RngVersion = rngVersion,
     };
 
+    /// <summary>
+    /// M4'te <c>MatchSetup.Home</c>/<c>Away</c> bir <see cref="TeamMatchSetup"/>'tir
+    /// (D61); bu yardımcı lineup parametrelerini korur ve doğrulama testlerinin
+    /// mekanik çağrılarını değiştirmeden uyum sağlar.
+    /// </summary>
     public static MatchSetup Setup(
         Team? home = null,
         Team? away = null,
@@ -94,10 +100,8 @@ internal static class TestData
         ulong seed = 12345) => new()
     {
         MatchId = matchId ?? Ids.Match(1),
-        Home = home ?? Team(1),
-        Away = away ?? Team(2),
-        HomeLineup = homeLineup ?? Lineup(),
-        AwayLineup = awayLineup ?? Lineup(),
+        Home = TeamMatchSetup.Default(home ?? Team(1), homeLineup ?? Lineup()),
+        Away = TeamMatchSetup.Default(away ?? Team(2), awayLineup ?? Lineup()),
         Seed = seed,
         Engine = engine ?? Identity(),
     };

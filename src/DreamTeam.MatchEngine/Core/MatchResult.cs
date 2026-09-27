@@ -46,6 +46,33 @@ public sealed record MatchResult
 
     public required ImmutableArray<MatchEvent> Events { get; init; }
 
+    /// <summary>
+    /// M4: maç sonu oyuncu enerji ve sahada kalma süresi (08 §88 "oyuncu
+    /// dakika/enerji dağılımı"). T12c bunun toplamını doğrular: 5 oyuncu × geçen
+    /// süre. Aborted maçlarda boştur — skor gibi yarım kalan maçta anlamsızdır.
+    /// </summary>
+    public ImmutableArray<PlayerEnergyReport> PlayerEnergy { get; init; } = [];
+
+    /// <summary>
+    /// M4: takım OVR'leri. <b>Gösterim amaçlıdır, çözüm girdisi değildir</b>
+    /// (D23/D24, T03). Motor hiçbir yerde bu değerleri okumaz.
+    /// </summary>
+    public int? HomeOverall { get; init; }
+
+    public int? AwayOverall { get; init; }
+
     /// <summary>Terminal durum değilse null.</summary>
     public string? AbortReason { get; init; }
 }
+
+/// <param name="PlayerId">Oyuncu kimliği.</param>
+/// <param name="DisplayName">Rapor çıktısı için.</param>
+/// <param name="Team">Taraf.</param>
+/// <param name="Energy">Maç sonu kalan enerji, 0-100 (görüntüleme için yuvarlanmış).</param>
+/// <param name="SecondsOnCourt">Sahada geçen canlı süre, saniye (kesirli).</param>
+public readonly record struct PlayerEnergyReport(
+    Guid PlayerId,
+    string DisplayName,
+    TeamSide Team,
+    int Energy,
+    double SecondsOnCourt);

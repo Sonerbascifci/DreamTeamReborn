@@ -51,7 +51,25 @@ public sealed record PossessionEndedPayload(int EndedPossessionId, PossessionEnd
 /// </summary>
 public sealed record ActionCompletedPayload(OffensiveAction Action) : MatchEventPayload;
 
-public sealed record ShotAttemptPayload(long ShotId, ShotType ShotType) : MatchEventPayload;
+/// <summary>
+/// Şut denemesi. 07 §2'deki zarf + payload sözleşmesi.
+///
+/// <para><b>M4: iki alan eklendi (D67).</b> <c>Quality</c> ve <c>ShooterEnergy</c>
+/// politika etkisini event'ten <b>gözlenebilir</b> kılar. M4'ün kabul kriteri
+/// ("controlled policy değişimi beklenen aksiyon karışımını etkiliyor") yalnız
+/// kalite değişimi okunabildiğinde yazılabilir; 08 §88'in istediği enerji
+/// dağılımı ve M6 kalibrasyonu da bu alanlara bağlıdır.</para>
+///
+/// <para><c>Quality</c> savunma + taktik + IQ'dan türetilir (0-100);
+/// <c>ShooterEnergy</c> bırakma anındaki enerjidir (0-100). İkisi de
+/// <b>çözüm girdisinin görünür hâlidir</b>, ikinci bir hesap yolunu temsil
+/// etmez.</para>
+/// </summary>
+public sealed record ShotAttemptPayload(
+    long ShotId,
+    ShotType ShotType,
+    int Quality,
+    int ShooterEnergy) : MatchEventPayload;
 
 public sealed record ShotMadePayload(
     long ShotId,

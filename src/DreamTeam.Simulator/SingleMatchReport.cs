@@ -13,12 +13,17 @@ namespace DreamTeam.Simulator;
 /// </summary>
 internal static class SingleMatchReport
 {
-    public static void Write(TextWriter writer, MatchResult result, EngineIdentity engine, string configHash)
+    public static void Write(
+        TextWriter writer,
+        MatchResult result,
+        EngineIdentity engine,
+        string configHash,
+        MatchSetup? setup = null)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(result);
 
-        writer.WriteLine("Dream Team Reborn — Match Engine v0.1 (M3 kural butunlugu)");
+        writer.WriteLine("Dream Team Reborn — Match Engine v0.1 (M4 oyuncu/taktik etkisi)");
         writer.WriteLine(new string('=', 78));
         writer.WriteLine($"MatchId      : {result.MatchId}");
         writer.WriteLine($"Engine       : {engine.EngineVersion}   Rules: {engine.RulesVersion}");
@@ -26,6 +31,23 @@ internal static class SingleMatchReport
         writer.WriteLine($"Status       : {result.Status}"
             + (result.AbortReason is { } abortReason ? $" — {abortReason}" : string.Empty));
         writer.WriteLine($"Periods      : {result.PeriodsPlayed}   Elapsed: {result.ElapsedGameTimeMs / 1000.0:F1} s");
+
+        if (setup is not null)
+        {
+            writer.WriteLine(
+                $"Taktik       : {HomeLabel}{setup.Home.Offensive}/{setup.Home.Defense} "
+                + $"| {AwayLabel}{setup.Away.Offensive}/{setup.Away.Defense}");
+            writer.WriteLine($"Tempo        : {HomeLabel}{setup.Home.Pace}  |  {AwayLabel}{setup.Away.Pace}");
+        }
+
+        // M4: OVR gosterim amaclidir; cozum girdisi DEGILDIR (T03).
+        if (result.HomeOverall is { } homeOvr && result.AwayOverall is { } awayOvr)
+        {
+            writer.WriteLine(
+                $"OVR (gosterim): {HomeLabel}{homeOvr}  |  {AwayLabel}{awayOvr}"
+                + "  <- cozum girdisi degildir; motor bu degeri hic okumaz");
+        }
+
         writer.WriteLine();
 
         if (result.Status != MatchStatus.Completed)
@@ -89,9 +111,51 @@ internal static class SingleMatchReport
         writer.WriteLine($"Toplam event : {result.Events.Length}");
 
         writer.WriteLine();
+        WriteEnergyTable(writer, result);
+        writer.WriteLine();
         WriteEventTrace(writer, result);
         writer.WriteLine();
         WriteIncompletenessNotice(writer);
+    }
+
+    /// <summary>
+    /// M4: maç sonu enerji ve sahada kalma süresi. 08 §88 bu dağılımı ister; T12c
+    /// toplamı ayrıca test eder. Rapor yalnız gösterir, hiçbir değeri
+    /// yeniden hesaplamaz.
+    /// </summary>
+    private static void WriteEnergyTable(TextWriter writer, MatchResult result)
+    {
+        if (result.PlayerEnergy.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        writer.WriteLine("Enerji ve sahada kalma suresi (mac sonu):");
+        writer.WriteLine(Divider());
+
+        foreach (var side in new[] { TeamSide.Home, TeamSide.Away })
+        {
+            var team = result.PlayerEnergy.Where(report => report.Team == side).ToList();
+
+            if (team.Count == 0)
+            {
+                continue;
+            }
+
+            var averageEnergy = team.Average(report => report.Energy);
+            var averageSeconds = team.Average(report => report.SecondsOnCourt);
+
+            writer.WriteLine(
+                $"  {(side == TeamSide.Home ? HomeLabel : AwayLabel),-5} ort. enerji {averageEnergy,5:F1}   "
+                + $"ort. sure {averageSeconds / 60.0,5:F1} dk");
+
+            foreach (var report in team.OrderByDescending(item => item.SecondsOnCourt))
+            {
+                writer.WriteLine(
+                    $"    {report.DisplayName,-26} enerji {report.Energy,3}   "
+                    + $"saha {report.SecondsOnCourt / 60.0,6:F1} dk");
+            }
+        }
     }
 
     private static void WriteEventTrace(TextWriter writer, MatchResult result)
@@ -113,6 +177,10 @@ internal static class SingleMatchReport
 
     private static string Describe(MatchEvent matchEvent) => matchEvent.Type switch
     {
+        MatchEventType.ShotAttempt =>
+            $"{matchEvent.PayloadAs<ShotAttemptPayload>().ShotType} "
+            + $"kalite {matchEvent.PayloadAs<ShotAttemptPayload>().Quality} "
+            + $"enerji {matchEvent.PayloadAs<ShotAttemptPayload>().ShooterEnergy}",
         MatchEventType.ShotMade => $"{matchEvent.PayloadAs<ShotMadePayload>().ShotType} "
             + $"{matchEvent.PayloadAs<ShotMadePayload>().Points} puan",
         MatchEventType.ShotMissed => $"{matchEvent.PayloadAs<ShotMissedPayload>().ShotType} kaçtı",
@@ -139,20 +207,24 @@ internal static class SingleMatchReport
                  {
                      "Yok: out-of-bounds, substitution penceresi, timeout, jump ball,",
                      "     defensive three seconds, technical/flagrant foul.",
-                     "Savunma taktigi cozumu YOK: taktik etkisi sayilmiyor.",
-                     "Tempo, enerji/stamina, rol uyumu, composite rating ve OVR YOK.",
+                     "Yok: steal atfedimi, transition aksiyonu, mismatch, takim ribaundu.",
+                     "Yok: mac ici taktik/tempo degisimi ve yedek yonetimi (M5).",
+                     "GameForm KAPALI: enerji disinda baska bir cesitlilik mekanizmasi yok.",
                      "",
                      "Bu sonuclar KALIBRE EDILMEMIS baslangic katsayilariyla uretildi.",
                      "Ortalama skor gercekci gorunse de bu denge kaniti degildir.",
                      "Sayisal dogrulama 10K/100K deneylerine (M6) birakilmistir.",
                      "Egalikte kazanan secilmemistir; rastgele kazanan uretilmez.",
                      "",
-                     "Siradaki adim: M4 oyuncu/tantik kararlarinin etkisi.",
+                     "Siradaki adim: M5 yonetici mudahalesi ve replay.",
                  })
         {
             writer.WriteLine("   " + line);
         }
     }
+
+    private const string HomeLabel = "Ev ";
+    private const string AwayLabel = "Dep ";
 
     private static TeamBoxScore Box(MatchResult result, TeamSide side) =>
         result.BoxScores.First(box => box.Team == side);

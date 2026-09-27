@@ -35,10 +35,27 @@ public sealed class FoulResolver
         _model = model;
     }
 
-    public FoulOutcome Occurred(IRandomSource random) =>
-        random.NextDouble() < _model.FoulProbabilityPerAction
+    /// <summary>
+    /// M4: savunma disiplininin eklediği faul payı çekilişe uygulanır.
+    /// <paramref name="disciplinePressure"/> D57'deki dört policy'den biridir; paket
+    /// içindeki agresif olanlar daha çok faul üretir.
+    ///
+    /// <para>Tavan <b>1.0</b>'dır, keyfî bir alt sınır değil. Bir olasılık zaten
+    /// [0,1] aralığındadır ve test fixture'ları "her aksiyonda faul" gibi
+    /// kuvvetlendirme senaryolarını 1.0 ile kurar; 0.95 gibi bir tavan bunları
+    /// sessizce zayıflatır ve M4'te gerçek bir hataya yol açmıştı.</para>
+    /// </summary>
+    public FoulOutcome Occurred(IRandomSource random, double disciplinePressure)
+    {
+        var probability = Math.Clamp(_model.FoulProbabilityPerAction + disciplinePressure, 0.0, 1.0);
+
+        return random.NextDouble() < probability
             ? new FoulOutcome(true, FoulType.NonShooting)
             : FoulOutcome.None;
+    }
+
+    /// <summary>M3 sözleşmesi: savunma disiplini etkisi yok.</summary>
+    public FoulOutcome Occurred(IRandomSource random) => Occurred(random, 0.0);
 
     /// <summary>Faul hücum faulü mü? Yalnız faul varsa çağrılır.</summary>
     public bool IsOffensive(IRandomSource random) =>

@@ -4,8 +4,11 @@ using DreamTeam.Domain.Teams;
 using DreamTeam.MatchEngine.Actions;
 using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Events;
+using DreamTeam.MatchEngine.Fatigue;
 using DreamTeam.MatchEngine.Projection;
 using DreamTeam.MatchEngine.Randomness;
+using DreamTeam.MatchEngine.Ratings;
+using DreamTeam.MatchEngine.Tactics;
 
 namespace DreamTeam.MatchEngine.Core;
 
@@ -27,6 +30,7 @@ namespace DreamTeam.MatchEngine.Core;
 /// <para><b>Determinism sozlesmesi</b> — her aksiyon su sirayla RNG tuketir:</para>
 /// <list type="number">
 ///   <item><description>aksiyon (1) + oyuncu (1)</description></item>
+///   <item><description><b>birincil savunmaci (1) — her zaman</b> (D68)</description></item>
 ///   <item><description>top kaybi (1)</description></item>
 ///   <item><description>faul olma (1)</description></item>
 ///   <item><description>suta donusme (1)</description></item>
@@ -35,16 +39,24 @@ namespace DreamTeam.MatchEngine.Core;
 ///   <item><description>cember teması (1) — yalniz sut varsa</description></item>
 ///   <item><description>blok (1) — yalniz sut varsa</description></item>
 ///   <item><description>isabet (1) — yalniz sut varsa ve bloklanmadıysa</description></item>
+///   <item><description>asist (1) — yalniz isabetli sut varsa</description></item>
 ///   <item><description>serbest atis (1) — her atis icin</description></item>
 ///   <item><description>ribaund (1) + ribaund alan (1) — yalniz canli miss sonrasi</description></item>
 /// </list>
+/// <para><b>M4'te birincil savunmaci cekilisi sabitlendi (D68).</b> M3'te faul
+/// atfı icin <c>PickDefender</c> koşula bagli bir cekiliş yaparken blok kendi
+/// agirlikli cekilisiyle ayri bir savunmaci seçiyordu. Bu, 05 §127'nin yasakladigi
+/// "ayni olayi iki kez örnekleme" desenidir ve faul ile blogun farkli kişilere
+/// yazilmasi riskini tasir. M4'te tek cekiliş vardir ve <b>ayni oyuncu</b> faul
+/// atfi, blogu ve kalite eslesmesi icin kullanilir. Yan etki: koşul bagimli
+/// konum kaymalari biter, cagri sayisi sabit +1 olur.</para>
 /// Bu sira degistirilirse tum golden sonuclar degisir; sira testlerle sabitlenir.
 /// Blok gerceklesirse isabet cekilisi <b>tuketilmez</b>: ayni sut iki kez
 /// orneklenmez (05 §127).
 /// </summary>
 public sealed class MatchSimulation
 {
-    public const int EventSchemaVersion = 2;
+    public const int EventSchemaVersion = 3;
 
     private readonly EngineConfig _config;
     private readonly string _configHash;
@@ -55,6 +67,10 @@ public sealed class MatchSimulation
     private readonly BlockResolver _blockResolver;
     private readonly RimContactResolver _rimContactResolver;
     private readonly FreeThrowResolver _freeThrowResolver;
+    private readonly OffensivePolicy _offense;
+    private readonly DefensivePolicy _defense;
+    private readonly PlayerRatingCalculator _ratings;
+    private readonly TeamRatingCalculator _teamRatings;
 
     public MatchSimulation(EngineConfig config)
     {
@@ -62,14 +78,24 @@ public sealed class MatchSimulation
 
         _config = config;
         _configHash = config.ComputeConfigHash();
-        _shotResolver = new ShotResolver(config.Shot);
-        _turnoverResolver = new TurnoverResolver(config.Actions);
-        _reboundResolver = new ReboundResolver(config.Actions);
+        _ratings = new PlayerRatingCalculator(config.SelectionSpread);
+        _defense = new DefensivePolicy(config.Defense, _ratings);
+        _offense = new OffensivePolicy(config.Tactics, config.ActionProfiles, _ratings);
+        _teamRatings = TeamRatingCalculator.Baseline;
+        _shotResolver = new ShotResolver(config.Shot, config.Fatigue);
+        _turnoverResolver = new TurnoverResolver(config.Actions, _defense);
+        _reboundResolver = new ReboundResolver(config.Actions, _ratings);
         _foulResolver = new FoulResolver(config.Fouls);
-        _blockResolver = new BlockResolver(config.Shot);
+        _blockResolver = new BlockResolver(_defense);
         _rimContactResolver = new RimContactResolver(config.Shot);
         _freeThrowResolver = new FreeThrowResolver(config.FreeThrows);
     }
+
+    /// <summary>M4: takım OVR'si. <b>Gösterim amaçlıdır, çözüm girdisi değildir</b> (T03).</summary>
+    public int OverallRating(MatchSetup setup, TeamSide side) =>
+        _teamRatings.OverallFor(
+            (side == TeamSide.Home ? setup.Home : setup.Away).Team,
+            (side == TeamSide.Home ? setup.Home : setup.Away).Lineup);
 
     public string ConfigHash => _configHash;
 
@@ -98,8 +124,8 @@ public sealed class MatchSimulation
             throw new InvalidOperationException($"Geçersiz MatchSetup reddedildi -> {reasons}");
         }
 
-        var home = BuildTeamState(setup.Home, setup.HomeLineup, TeamSide.Home);
-        var away = BuildTeamState(setup.Away, setup.AwayLineup, TeamSide.Away);
+        var home = BuildTeamState(setup.Home, TeamSide.Home);
+        var away = BuildTeamState(setup.Away, TeamSide.Away);
 
         return new MatchState
         {
@@ -200,11 +226,22 @@ public sealed class MatchSimulation
             {
                 // Ilerleme yoksa sonsuz dongu riski olusur. 06 §2: sonsuz dongu
                 // skoru bozmaz, maci Aborted yapar.
-                return AbortedResult(setup, "Ilerleme yok; motor durdu. Bu bir hata durumudur.", events);
+                return AbortedResult(setup, "Ilerleme yok; motor durdu. Bu bir hata durumudur.", events)
+                    with
+                    {
+                        HomeOverall = OverallRating(setup, TeamSide.Home),
+                        AwayOverall = OverallRating(setup, TeamSide.Away),
+                    };
             }
         }
 
-        return Project(setup, state, events);
+        // M4: OVR burada hesaplanir ama motor HICBIR YERDE okumaz (D23/D24).
+        // Yalnizca rapor ciktisinda gorunur; T03 bunu kanitlar.
+        return Project(setup, state, events) with
+        {
+            HomeOverall = OverallRating(setup, TeamSide.Home),
+            AwayOverall = OverallRating(setup, TeamSide.Away),
+        };
     }
 
     private static string Describe(MatchSetupValidationResult validation) =>
@@ -278,22 +315,57 @@ public sealed class MatchSimulation
             BoxScores = [projection.Home, projection.Away],
             PlayerBoxScores = projection.Players,
             Events = [.. events],
+            PlayerEnergy = completed ? BuildEnergyReport(state) : [],
             AbortReason = abortReason,
         };
     }
 
-    private static TeamMatchState BuildTeamState(Team team, Lineup lineup, TeamSide side)
+    /// <summary>
+    /// Maç sonu enerji ve dakika raporu. Kanonik kadro sırasına göre üretilir ki
+    /// çıktı deterministik olsun (08 §4).
+    /// </summary>
+    private static ImmutableArray<PlayerEnergyReport> BuildEnergyReport(MatchState state)
+    {
+        var builder = ImmutableArray.CreateBuilder<PlayerEnergyReport>();
+
+        foreach (var side in new[] { TeamSide.Home, TeamSide.Away })
+        {
+            var team = state.Team(side);
+            var definitions = new Dictionary<Guid, string>();
+
+            foreach (var player in team.Roster)
+            {
+                definitions[player.Id] = player.DisplayName;
+            }
+
+            foreach (var playerState in team.PlayerStates)
+            {
+                builder.Add(new PlayerEnergyReport(
+                    playerState.PlayerId,
+                    definitions.GetValueOrDefault(
+                        playerState.PlayerId,
+                        playerState.PlayerId.ToString()),
+                    side,
+                    FatigueCalculator.ForDisplay(playerState.Energy),
+                    playerState.SecondsOnCourt));
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private TeamMatchState BuildTeamState(TeamMatchSetup setup, TeamSide side)
     {
         var byId = new Dictionary<Guid, Player>();
 
-        foreach (var player in team.Roster)
+        foreach (var player in setup.Team.Roster)
         {
             byId[player.Id] = player;
         }
 
-        var onCourt = ImmutableArray.CreateBuilder<Player>(lineup.PlayerIds.Length);
+        var onCourt = ImmutableArray.CreateBuilder<Player>(setup.Lineup.PlayerIds.Length);
 
-        foreach (var playerId in lineup.PlayerIds)
+        foreach (var playerId in setup.Lineup.PlayerIds)
         {
             if (!byId.TryGetValue(playerId, out var player))
             {
@@ -304,12 +376,20 @@ public sealed class MatchSimulation
             onCourt.Add(player);
         }
 
+        // Roster ve PlayerStates ayni kanonik sirayi paylasir: 04 §11 oyuncu
+        // durumu, kadro sirasina gore indekslenir.
+        var roster = RosterOrdering.Canonical(setup.Team.Roster);
+
         return new TeamMatchState
         {
             Side = side,
-            Team = team,
-            Roster = RosterOrdering.Canonical(team.Roster),
+            Team = setup.Team,
+            OffensiveTactic = setup.Offensive,
+            DefensiveTactic = setup.Defense,
+            Pace = setup.Pace,
+            Roster = roster,
             OnCourt = onCourt.ToImmutable(),
+            PlayerStates = TeamMatchState.InitialStates(roster, _config.Fatigue),
             Fouls = FoulCounters.Empty,
             FoulOutPlayerIds = [],
         };
@@ -341,6 +421,25 @@ public sealed class MatchSimulation
                 period,
                 PeriodController.DurationMsForPeriod(rules, period),
                 ClockResetPolicy.ForNewPossession(rules));
+
+            // M4: periyot arasi toparlanma. Canli SURE sayilmaz; SecondsOnCourt
+            // degismez (T12c'nin toplami bozulmamalidir).
+            //
+            // ONEMLI: suresi <c>_state.Clock.GameClockMs</c> DEGIL, onceki periyotun
+            // tam sureyi. Periyot bittiginde oyun saati zaten sifirdir; saatten
+            // okumak toparlanmayi daima sifir birakirdi.
+            if (period > 1)
+            {
+                var breakMs = PeriodController.DurationMsForPeriod(rules, period - 1);
+
+                _state = _state with
+                {
+                    Home = _state.Home.WithPlayerStates(FatigueCalculator.RecoverDuringBreak(
+                        _engine._config.Fatigue, _state.Home.PlayerStates, breakMs)),
+                    Away = _state.Away.WithPlayerStates(FatigueCalculator.RecoverDuringBreak(
+                        _engine._config.Fatigue, _state.Away.PlayerStates, breakMs)),
+                };
+            }
 
             // Takim faulu periyot sayacidir: her periyot basinda sifirlanir.
             // D42'nin uzatma sarti bunun alt kumesidir.
@@ -458,10 +557,15 @@ public sealed class MatchSimulation
                 ?? throw new InvalidOperationException("Aksiyon yok: possession yok.");
 
             var attacking = _state.Team(offense);
-            var selector = new ActionSelector(_engine._config.ActionProfiles, attacking.OnCourt);
+            var defending = _state.Team(offense.Opponent());
 
+            // M4: aksiyon ve oyuncu secimi taktiğin normalize dağılımından gelir.
+            // Sıra 1) ve 2) — iki çekiliş, M3 ile aynı.
             var actionId = _state.NextActionId;
-            var selection = selector.Select(_state.Random);
+            var selection = _engine._offense.Select(
+                attacking.OffensiveTactic,
+                attacking.OnCourt,
+                _state.Random);
 
             _state = _state with
             {
@@ -473,19 +577,27 @@ public sealed class MatchSimulation
                 },
             };
 
-            // 1) top kaybi
-            var turnover = _engine._turnoverResolver.Resolve(_state.Random);
+            // 3) BIRINCIL SAVUNMACI — her zaman bir cekilis (D68). Ayni oyuncu
+            // faul atfi, blogu ve kalite eslesmesi icin kullanilir.
+            var primaryDefender = PickPrimaryDefender(selection.ShotType);
+
+            // 4) top kaybi — savunma baskisi kanalindan etkilenir
+            var turnover = _engine._turnoverResolver.Resolve(
+                PlayerOf(defending, primaryDefender).Ratings,
+                _state.Random);
+
+            var setupMs = SetupActionMilliseconds(offense);
 
             if (turnover.IsTurnover)
             {
-                _state = _state.Consume(_engine._config.Actions.SetupActionMs);
+                ConsumeLive(offense, setupMs);
                 RecordTurnover(offense, selection.PlayerId, actionId, TurnoverKind.LostBall);
                 EndPossession(PossessionEndReason.Turnover);
                 HandleAfterPossession(offense);
                 return;
             }
 
-            _state = _state.Consume(_engine._config.Actions.SetupActionMs);
+            ConsumeLive(offense, setupMs);
 
             if (_state.Clock.IsGameTimeExhausted)
             {
@@ -494,10 +606,12 @@ public sealed class MatchSimulation
                 return;
             }
 
-            // 2) faul olma
-            var foul = _engine._foulResolver.Occurred(_state.Random);
+            // 5) faul olma — savunma disiplini kanalindan etkilenir
+            var foul = _engine._foulResolver.Occurred(
+                _state.Random,
+                _engine._defense.FoulAggression(defending.DefensiveTactic));
 
-            // 3) suta donusme
+            // 6) suta donusme
             var shotAttempted = _state.Random.NextDouble()
                 < _engine._config.Actions.ShotCompletionProbability;
 
@@ -532,7 +646,7 @@ public sealed class MatchSimulation
                     ApplyFoul(
                         offense,
                         _state.NextFoulId,
-                        PickDefender(offense),
+                        primaryDefender,
                         FoulType.NonShooting,
                         0,
                         selection.PlayerId,
@@ -568,7 +682,7 @@ public sealed class MatchSimulation
                 return;
             }
 
-            ReleaseShot(offense, selection, actionId, foul);
+            ReleaseShot(offense, selection, actionId, primaryDefender, foul);
         }
 
         /// <summary>
@@ -602,6 +716,7 @@ public sealed class MatchSimulation
             TeamSide offense,
             ActionSelection selection,
             long actionId,
+            Guid primaryDefender,
             FoulOutcome foul)
         {
             var shotId = _state.NextShotId;
@@ -609,7 +724,7 @@ public sealed class MatchSimulation
             long shooterFoulId = 0;
             var foulType = FoulType.NonShooting;
 
-            // 5) hucre faulu — ShotAttempt ONCESI cozulur.
+            // 7) hucre faulu — ShotAttempt ONCESI cozulur (D50).
             if (foul.IsFoul)
             {
                 if (_engine._foulResolver.IsOffensive(_state.Random))
@@ -618,15 +733,40 @@ public sealed class MatchSimulation
                     return;
                 }
 
-                // 6) shooting faulu: yalniz faul ve sut varsa anlamlidir
+                // 8) shooting faulu: yalniz faul ve sut varsa anlamlidir
                 var isShooting = _engine._foulResolver.IsShooting(_state.Random);
 
-                if (isShooting)
-                {
-                    foulType = FoulType.Shooting;
-                    shooterFoulId = foulId;
-                }
+                foulType = isShooting ? FoulType.Shooting : FoulType.NonShooting;
+
+                // D69 (M4'te bulunan gercek hata): savunma faulu <b>her</b> durumda
+                // yazilir. Onceki surum yalniz <c>isShooting</c> dogrulusunda
+                // ApplyFoul cagiryordu; shooting OLMAYAN savunma faulu sut
+                // denemesinde sessizce kayboluyordu. Boylece kisisel faul sayaci,
+                // takim faul sayaci ve bonus hic tetiklenmiyordu.
+                shooterFoulId = foulId;
             }
+
+            var attacking = _state.Team(offense);
+            var defending = _state.Team(offense.Opponent());
+            var shooter = PlayerOf(attacking, selection.PlayerId);
+            var defender = PlayerOf(defending, primaryDefender);
+
+            // M4: kalite burada hesaplanir ve PendingShot'a yazilir. Taktik
+            // bonusu + savunma cezasi + IQ farki tek noktada toplanir (D58:
+            // savunmanin z'ye dogrudan girdigi bir yol yoktur).
+            var quality = ShotQualityResolver.Resolve(
+                selection.Action,
+                attacking.OffensiveTactic,
+                _engine._config.Tactics,
+                defending.DefensiveTactic,
+                _engine._defense,
+                shooter.Ratings.BasketballIQ,
+                defender.Ratings.BasketballIQ);
+
+            // M4: shooter enerjisi hesap icin kesirli kalir; event yalnizca gozlem
+            // icin tam sayiya yuvarlanir (D67).
+            var shooterEnergy = attacking.StateFor(selection.PlayerId)?.Energy
+                ?? _engine._config.Fatigue.StartingEnergy;
 
             _state = _state with
             {
@@ -639,7 +779,11 @@ public sealed class MatchSimulation
 
             Emit(
                 MatchEventType.ShotAttempt,
-                new ShotAttemptPayload(shotId, selection.ShotType),
+                new ShotAttemptPayload(
+                    shotId,
+                    selection.ShotType,
+                    quality,
+                    FatigueCalculator.ForDisplay(shooterEnergy)),
                 possessionId: _state.Possession!.PossessionId,
                 actionId: actionId,
                 teamId: offense,
@@ -648,8 +792,7 @@ public sealed class MatchSimulation
 
             if (shooterFoulId != 0)
             {
-                var defenderId = PickDefender(offense);
-                ApplyFoul(offense, foulId, defenderId, foulType, 0, selection.PlayerId, actionId);
+                ApplyFoul(offense, foulId, primaryDefender, foulType, 0, selection.PlayerId, actionId);
 
                 // Faul foul-out'a yol actiysa ve yasal yedek yoksa motor Aborted
                 // olmustur. Bu durumun uzerine PendingShot yazmak terminal durumu
@@ -660,11 +803,11 @@ public sealed class MatchSimulation
                 }
             }
 
-            // 7) cember teması (06 §6 reset tablosu)
+            // 9) cember teması (06 §6 reset tablosu)
             var rimContact = _engine._rimContactResolver.TouchedRim(_state.Random);
 
             // Ucus suresi canli oyun suresidir.
-            _state = _state.Consume(_engine._config.Actions.ShotFlightMs);
+            ConsumeLive(offense, _engine._config.Actions.ShotFlightMs);
 
             _state = _state with
             {
@@ -676,8 +819,11 @@ public sealed class MatchSimulation
                     FoulId = shooterFoulId,
                     FoulType = foulType,
                     ShooterId = selection.PlayerId,
+                    PrimaryDefenderId = primaryDefender,
                     ShotType = selection.ShotType,
                     SkillRating = selection.SkillRating,
+                    Quality = quality,
+                    ShooterEnergy = FatigueCalculator.ForDisplay(shooterEnergy),
                     RimContact = rimContact,
                 },
             };
@@ -696,24 +842,29 @@ public sealed class MatchSimulation
             var offense = _state.Possession?.Offense
                 ?? throw new InvalidOperationException("Şut var ama possession yok.");
 
-            // 8) blok
-            var isBlocked = _engine._blockResolver.IsBlocked(_state.Random);
+            // 10) blok — M4'te savunmacinin ic savunma composite'inden turetilir.
+            // D68: bloklayan, pending'te kayitli BIRINCIL savunmacinin kendisidir;
+            // burada yeni bir savunmaci cekilisi YAPILMAZ.
+            var defender = PlayerOf(_state.Team(offense.Opponent()), pending.PrimaryDefenderId);
+            var isBlocked = _engine._blockResolver.IsBlocked(defender.Ratings, _state.Random);
 
-            Guid? blockerId = null;
+            Guid? blockerId = isBlocked ? pending.PrimaryDefenderId : null;
 
-            if (isBlocked)
-            {
-                blockerId = PickDefender(offense);
-            }
-
-            // 9) isabet: blok gerceklesmisse cekilis tuketilmez
+            // 11) isabet: blok gerceklesmisse cekilis tuketilmez (05 §127).
+            // M4: quality ve fatigueLoad kanallari devreye girer.
             var isMade = false;
 
             if (!isBlocked)
             {
+                var fatigueLoad = FatigueCalculator.FatigueLoad(
+                    _engine._config.Fatigue,
+                    pending.ShooterEnergy);
+
                 var outcome = _engine._shotResolver.Resolve(
                     pending.ShotType,
                     pending.SkillRating,
+                    pending.Quality,
+                    fatigueLoad,
                     _state.Random);
 
                 isMade = outcome.IsMade;
@@ -1223,9 +1374,18 @@ public sealed class MatchSimulation
 
         // ------------------------------------------------------------------ secimler
 
-        private Guid PickDefender(TeamSide offense)
+        /// <summary>
+        /// Birincil savunmacı seçimi (D68). <b>Her aksiyonda bir çekiliş</b> yapılır
+        /// ve seçilen kişi o aksiyonun tamamında kullanılır: top kaybı baskısı, faul
+        /// atfı, blok ve şut kalitesi eşleşmesi. Bu, M3'teki iki ayrı savunmacı
+        /// çekilişini (05 §127'nin yasakladığı desen) ortadan kaldırır.
+        ///
+        /// Ağırlık <b>role göre</b> seçilir: iç şut için iç savunma, dış şut için
+        /// perimeter savunma composite'i. Pozisyon modeli yoktur (D35, D66).
+        /// </summary>
+        private Guid PickPrimaryDefender(ShotType shotType)
         {
-            var defenders = _state.Team(offense.Opponent()).OnCourt;
+            var defenders = _state.Team(_state.Possession!.Offense.Opponent()).OnCourt;
 
             if (defenders.IsDefaultOrEmpty)
             {
@@ -1234,7 +1394,8 @@ public sealed class MatchSimulation
 
             return WeightedSelector.Select(
                 defenders,
-                player => player.Ratings.Block + 1.0,
+                player => _engine._defense.SelectionWeight(
+                    _engine._defense.RoleComposite(player.Ratings, shotType)),
                 _state.Random).Id;
         }
 
@@ -1251,8 +1412,22 @@ public sealed class MatchSimulation
 
             return WeightedSelector.Select(
                 candidates,
-                player => player.Ratings.Passing + 1.0,
+                player => _engine._ratings.SelectionWeight(PlayerRatingTables.Handle(player.Ratings)),
                 _state.Random).Id;
+        }
+
+        /// <summary>Bir takımın belirli bir oyuncusunu döner. Kadro dışıysa hata.</summary>
+        private static Player PlayerOf(TeamMatchState team, Guid playerId)
+        {
+            foreach (var player in team.Roster)
+            {
+                if (player.Id == playerId)
+                {
+                    return player;
+                }
+            }
+
+            throw new InvalidOperationException($"Oyuncu kadroda bulunamadi: {playerId} ({team.Side}).");
         }
 
         private Player FindPlayer(Guid playerId)
@@ -1274,6 +1449,69 @@ public sealed class MatchSimulation
             }
 
             throw new InvalidOperationException($"Oyuncu kadrolarda bulunamadi: {playerId}");
+        }
+
+        // --------------------------------------------------------------- tempo / enerji
+
+        /// <summary>
+        /// Hücum takımının temposuna göre çarpılmış aksiyon süresi (D59). Yuvarlama
+        /// yuvarlamaya yapılır ve sonuç en az 1 ms'dir.
+        /// </summary>
+        private long SetupActionMilliseconds(TeamSide offense)
+        {
+            var tuning = _engine._config.Pace.TuningFor(_state.Team(offense).Pace);
+            var scaled = _engine._config.Actions.SetupActionMs * tuning.SetupActionMultiplier;
+
+            return Math.Max(1L, (long)Math.Round(scaled, MidpointRounding.AwayFromZero));
+        }
+
+        /// <summary>
+        /// Canlı oyun süresi tüketir ve <b>on oyuncuya</b> enerji yazar (05 §164,
+        /// T12f): sahnede beş drain, yedek beş recovery. İki takım birden
+        /// güncellenir çünkü drain/recovery oyuncuya özeldir, tarafa değil.
+        /// </summary>
+        private void ConsumeLive(TeamSide offense, long requestedMilliseconds)
+        {
+            if (requestedMilliseconds <= 0)
+            {
+                return;
+            }
+
+            // ONEMLI: istenen degil GERCEKTEN oynanan sure kullanilir. Periyot
+            // sonunda bir aksiyonun suresi kalan oyun saatini asabilir; saat
+            // sifirlanir ve fazlasi oynanmamistir. Enerji ve SecondsOnCourt da
+            // oynanmamis kismi YAZMAMALIDIR — aksi halde toplam oynama suresi
+            // "5 x elapsed" esitligini bozar (T12c).
+            var consumed = Math.Min(
+                requestedMilliseconds,
+                Math.Max(0, _state.Clock.GameClockMs));
+
+            if (consumed <= 0)
+            {
+                return;
+            }
+
+            var homeDrain = _engine._config.Pace.TuningFor(_state.Home.Pace).EnergyDrainMultiplier;
+            var awayDrain = _engine._config.Pace.TuningFor(_state.Away.Pace).EnergyDrainMultiplier;
+
+            _state = _state with
+            {
+                Clock = _state.Clock.ConsumeLiveTime(consumed),
+                Home = _state.Home.WithPlayerStates(FatigueCalculator.Advance(
+                    _engine._config.Fatigue,
+                    _state.Home.PlayerStates,
+                    _state.Home.Roster,
+                    _state.Home.OnCourt,
+                    consumed,
+                    homeDrain)),
+                Away = _state.Away.WithPlayerStates(FatigueCalculator.Advance(
+                    _engine._config.Fatigue,
+                    _state.Away.PlayerStates,
+                    _state.Away.Roster,
+                    _state.Away.OnCourt,
+                    consumed,
+                    awayDrain)),
+            };
         }
 
         // ---------------------------------------------------------------- yardimci

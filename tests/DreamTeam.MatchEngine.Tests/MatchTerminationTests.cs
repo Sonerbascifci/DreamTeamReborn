@@ -59,9 +59,15 @@ public class MatchTerminationTests
         var overtimeMatches = 0;
         var tiedAfterFour = 0;
 
+        // M4: dusuk skorlu profil kullanilir. Varsayilan config'de savunma ve
+        // kalite kanallari acilinca esitlik araliklari daraldi ve 120 seed'de
+        // uzatma gozlemlenemiyordu. Bu bir DENGE ayari degil, uzatma yolunu
+        // gozlemleyebilmek icin fixture secimi.
+        var config = M3TestData.LowScoring();
+
         for (var seed = 0UL; seed < 120UL; seed++)
         {
-            var result = new MatchSimulation(M2TestData.Config()).Simulate(M2TestData.NeutralMirror(seed));
+            var result = new MatchSimulation(config).Simulate(M2TestData.NeutralMirror(seed));
 
             if (result.Status != MatchStatus.Completed)
             {
@@ -73,7 +79,7 @@ public class MatchTerminationTests
 
             Assert.Equal(result.HomeScore == result.AwayScore, payload.IsTie);
 
-            if (result.PeriodsPlayed > M2TestData.Config().Rules.PeriodCount)
+            if (result.PeriodsPlayed > config.Rules.PeriodCount)
             {
                 overtimeMatches += 1;
             }
@@ -90,12 +96,13 @@ public class MatchTerminationTests
     [Fact]
     public void OvertimePeriodsAreShorterAndFlagged()
     {
-        var rules = M2TestData.Config().Rules;
+        var config = M3TestData.LowScoring();
+        var rules = config.Rules;
         var found = false;
 
         for (var seed = 0UL; seed < 120UL && !found; seed++)
         {
-            var result = new MatchSimulation(M2TestData.Config()).Simulate(M2TestData.NeutralMirror(seed));
+            var result = new MatchSimulation(config).Simulate(M2TestData.NeutralMirror(seed));
 
             foreach (var period in result.Events
                          .Where(e => e.Type == MatchEventType.PeriodStarted)
@@ -142,7 +149,17 @@ public class MatchTerminationTests
     [Fact]
     public void InvalidSetupIsRejectedBeforeAnyEventIsProduced()
     {
-        var invalid = M2TestData.NeutralMirror() with { HomeLineup = new Domain.Teams.Lineup { PlayerIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()] } };
+        var baseSetup = M2TestData.NeutralMirror();
+        var invalid = baseSetup with
+        {
+            Home = baseSetup.Home with
+            {
+                Lineup = new Domain.Teams.Lineup
+                {
+                    PlayerIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()],
+                },
+            },
+        };
 
         var result = new MatchSimulation(M2TestData.Config()).Simulate(invalid);
 
@@ -158,8 +175,16 @@ public class MatchTerminationTests
     {
         // Hücum saati dolduğunda possession kapanmalı; aksi halde döngü sonsuzlaşır.
         // Bu, planda 09'un dört sonucuna eklenen beşinci güvenlik sonucudur.
-        var actions = M2TestData.Config().Actions with { ShotCompletionProbability = 0.0 };
-        var config = M2TestData.Config(actions: actions);
+        //
+        // M4 notu: hucrem 3 aksiyonda bittigi icin hucrem basina yalnizca birkac
+        // deneme olur. Testin anlamli kalabilmesi icin kucuk bir sut olasiligi
+        // birakilir; yoksa skor hep 0-0 kalir ve mac beraberlikle uzatmaya girer
+        // (bkz. DegenerateZeroScoreMatchIsAbortedByTheGuard).
+        var baseConfig = M2TestData.Config();
+        var config = M2TestData.Config(
+            actions: baseConfig.Actions with { ShotCompletionProbability = 0.05 },
+            fouls: baseConfig.Fouls with { FoulProbabilityPerAction = 0.05 });
+
         var result = new MatchSimulation(config).Simulate(M2TestData.NeutralMirror());
 
         Assert.Equal(MatchStatus.Completed, result.Status);
@@ -178,9 +203,55 @@ public class MatchTerminationTests
                 e.Sequence > violation.Sequence && e.Type == MatchEventType.PossessionEnded);
 
             Assert.Equal(violation.PossessionId, ended.PayloadAs<PossessionEndedPayload>().EndedPossessionId);
-        }
 
-        Assert.DoesNotContain(result.Events, e => e.Type == MatchEventType.ShotAttempt);
+            // Ihlalden sonra AYNI hucremde sut birakilmez. Saat sifirdayken
+            // birakma gecersizdir (D42: releaseTime < expiryTime, esitlikte ihlal).
+            var samePossessionShot = result.Events.Any(e =>
+                e.Type == MatchEventType.ShotAttempt
+                && e.PossessionId == violation.PossessionId
+                && e.Sequence > violation.Sequence
+                && e.Sequence < ended.Sequence);
+
+            Assert.False(samePossessionShot);
+        }
+    }
+
+    /// <summary>
+    /// T10d: eşitlikte kazanan **uydurulmaz** ve sonsuz döngü oluşmaz. 08 §T10
+    /// "guard → Aborted" der; motor da öyle yapar.
+    ///
+    /// <para>Bu test, hiç puan atılabilen bir fixture ile <b>gerçekten</b> 0-0
+    /// beraberliğe düşülen yolu ölçer. Skor hep eşit olduğu için her periyot
+    /// sonunda uzatma açılır; sonsuz döngüyü yalnız eylem guard'ı keser. Aborted
+    /// sonuçta <c>IsTie</c> <b>false</b>'tır — 06 §8 gereği yarım kalan maç beraberlik
+    /// sayılmaz ve skor geçersizdir.</para>
+    /// </summary>
+    [Fact]
+    public void DegenerateZeroScoreMatchIsAbortedByTheGuardWithoutFalsifyingTheScore()
+    {
+        var baseConfig = M2TestData.Config();
+        var config = M2TestData.Config(
+            actions: baseConfig.Actions with { ShotCompletionProbability = 0.0 },
+            fouls: baseConfig.Fouls with { FoulProbabilityPerAction = 0.0 });
+
+        var result = new MatchSimulation(config).Simulate(M2TestData.NeutralMirror());
+
+        Assert.Equal(MatchStatus.Aborted, result.Status);
+        Assert.NotNull(result.AbortReason);
+
+        // Uydurma galibiyet yok: yarım kalan maç beraberlik değildir.
+        Assert.False(result.IsTie);
+        Assert.Equal(0, result.HomeScore);
+        Assert.Equal(0, result.AwayScore);
+
+        // Uzatma gerçekten açıldı (periyot sayısı normalin üstünde) ve guard
+        // devreye girdi.
+        Assert.True(result.PeriodsPlayed > config.Rules.PeriodCount);
+        Assert.Contains("guard", result.AbortReason!, StringComparison.OrdinalIgnoreCase);
+
+        // Maç sonu MatchEnded üretilmedi: yalnız MatchAborted.
+        Assert.DoesNotContain(result.Events, e => e.Type == MatchEventType.MatchEnded);
+        Assert.Contains(result.Events, e => e.Type == MatchEventType.MatchAborted);
     }
 
     [Fact]

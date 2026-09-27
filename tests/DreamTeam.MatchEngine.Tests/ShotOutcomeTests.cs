@@ -121,9 +121,9 @@ public class ShotOutcomeTests
                 Period = 1,
                 GameClockMs = 700_000,
                 ElapsedGameTimeMs = 20_000,
-                Payload = new ShotAttemptPayload(1, ShotType.ThreePoint),
+                Payload = new ShotAttemptPayload(1, ShotType.ThreePoint, 50, 100),
                 TeamId = TeamSide.Home,
-                PlayerId = M2TestData.NeutralMirror().HomeLineup.PlayerIds[0],
+                PlayerId = M2TestData.NeutralMirror().Home.Lineup.PlayerIds[0],
             },
         };
 
@@ -237,13 +237,19 @@ public class ShotOutcomeTests
         return foul is null ? 0 : foul.PayloadAs<FoulPayload>().FoulId;
     }
 
-    private static TeamSide SideOf(MatchSetup setup, Guid playerId)    {
-        if (setup.HomeLineup.PlayerIds.Contains(playerId))
+    /// <summary>
+    /// Bir oyuncunun tarafı. <b>Kadro</b> sınırı kullanılır, ilk beş değil:
+    /// M3'ten beri foul-out yedeklemesi oyuncuyu değiştirebiliyor ve değişmeyen
+    /// sınır kadrodur.
+    /// </summary>
+    private static TeamSide SideOf(MatchSetup setup, Guid playerId)
+    {
+        if (setup.Home.Team.Roster.Any(player => player.Id == playerId))
         {
             return TeamSide.Home;
         }
 
-        Assert.Contains(playerId, setup.AwayLineup.PlayerIds);
+        Assert.Contains(playerId, setup.Away.Team.Roster.Select(player => player.Id).ToList());
         return TeamSide.Away;
     }
 }

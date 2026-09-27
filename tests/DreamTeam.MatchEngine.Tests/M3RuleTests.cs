@@ -174,11 +174,28 @@ public class M3RuleTests
         var attempts = result.Events.Where(e => e.Type == MatchEventType.FreeThrowAttempt).ToList();
 
         Assert.NotEmpty(attempts);
-        Assert.All(attempts, a => Assert.Equal(1, a.PayloadAs<FreeThrowAttemptPayload>().Count));
 
-        // And-one: her isabetli shooting faul tam olarak bir FT ve bir FGA yazar.
+        // Taban isabet olasiligi 0.999: pratikte her sut isabetlidir ama nadiren
+        // bir kacma olur ve o zaman kacan shooting foul 2 FT verir. Test her iki
+        // durumu da kabul eder ama serinin uzunlugunu isabetle eslestirir.
+        Assert.All(attempts, a =>
+        {
+            var payload = a.PayloadAs<FreeThrowAttemptPayload>();
+            Assert.InRange(payload.Count, 1, 2);
+        });
+
+        var oneShot = attempts.Count(a => a.PayloadAs<FreeThrowAttemptPayload>().Count == 1);
         var made = result.Events.Count(e => e.Type == MatchEventType.ShotMade);
-        Assert.Equal(made, attempts.Count);
+
+        // And-one kurali (06 §86): ISABETLI shooting faul tam olarak 1 FT verir.
+        // Kacan shooting faul 2 (uclukse 3) FT verir; bu testte taban isabet
+        // olasiligi 0.999 oldugu icim kacma neredeyse yoktur.
+        Assert.Equal(made, oneShot);
+
+        // M4 notu: blok orani sabit config sayisi degil savunma composite'iden
+        // turetilir ve bu fixture'da kapali degildir. Bloklu sut KACAN bir suttur
+        // ve 2 FT uretir; bu yuzden "her kacma = 2 FT" esitligi guvenilir
+        // degildir. Tek dogrulanabilir kural isabetli faulun 1 FT vermesidir.
 
         var home = result.BoxScores.First(b => b.Team == TeamSide.Home);
         var away = result.BoxScores.First(b => b.Team == TeamSide.Away);
@@ -493,7 +510,11 @@ public class M3RuleTests
     public void TeamFoulCounterResetsEachPeriod()
     {
         var config = M2TestData.Config();
-        var fouls = config.Fouls with { FoulProbabilityPerAction = 1.0, OffensiveFoulShare = 0.0 };
+
+        // D69 sonrasi savunma faulleri de kaydediliyor. Faul olasiligi 1.0
+        // olsaydi her periyotta foul-out birikir ve mac D43 ile Aborted olurdu;
+        // bu testin konusu faul degil periyot sayacinin sifirlanmasi.
+        var fouls = config.Fouls with { FoulProbabilityPerAction = 0.15, OffensiveFoulShare = 0.0 };
         var result = new MatchSimulation(config with { Fouls = fouls }).Simulate(M2TestData.NeutralMirror(13));
 
         var perPeriod = new Dictionary<int, int>();
@@ -509,7 +530,11 @@ public class M3RuleTests
         }
 
         Assert.True(perPeriod.Count >= 3, "Yeterli periyot verisi yok.");
-        Assert.DoesNotContain(perPeriod.Values, value => value < 2);
+
+        // D69 sonrasi savunma faulleri de (shooting olmayanlar dahil) kaydedilir;
+        // M3'te bu dal sessizce kayboluyordu ve periyot basina 0-1 faul kaliyordu.
+        // Artik her periyotta belirgin sayida savunma faulu olmali.
+        Assert.DoesNotContain(perPeriod.Values, value => value < 5);
     }
 
     [Fact]

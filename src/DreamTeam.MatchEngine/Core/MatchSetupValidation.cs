@@ -22,6 +22,12 @@ public enum MatchSetupErrorCode
     LineupPlayerNotInRoster,
     EngineIdentityIncomplete,
     RngIdentityMismatch,
+
+    /// <summary>M4 (D61): tanımsız hücum taktiği veya savunma policy'si.</summary>
+    UnknownTactic,
+
+    /// <summary>M4 (D61): tanımsız tempo değeri.</summary>
+    UnknownPace,
 }
 
 /// <summary>

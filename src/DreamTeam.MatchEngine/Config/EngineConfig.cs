@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using DreamTeam.Domain.Players;
+using DreamTeam.MatchEngine.Ratings;
 
 namespace DreamTeam.MatchEngine.Config;
 
@@ -171,10 +172,10 @@ public sealed record ShotModel
     public required double SkillScale { get; init; }
 
     /// <summary>
-    /// Şutun bloke edilme olasılığı (05 §8 adım 4, T04). Blok aynı şuta bağlıdır
-    /// ve ikinci bir FGA yazmaz (07 §3). Kalibre edilmemiş.
+    /// M4: şut kalitesi ile logit arasındaki ölçek (05 §7 <c>betaQuality</c>).
+    /// Savunma ve taktik etkisinin <b>tek</b> kanalıdır.
     /// </summary>
-    public required double BlockProbability { get; init; }
+    public required double QualityScale { get; init; }
 
     /// <summary>
     /// Şutun çembere değme olasılığı. 06 §6'ya göre yalnız çembere değen miss
@@ -200,7 +201,7 @@ public sealed record ShotModel
         MidRangeBase = 0.415,
         ThreePointBase = 0.36,
         SkillScale = 0.6,
-        BlockProbability = 0.06,
+        QualityScale = 0.9,
         RimContactProbability = 0.70,
     };
 }
@@ -208,75 +209,84 @@ public sealed record ShotModel
 /// <summary>
 /// Bir aksiyonun hangi şut türüne gittiği ve beceriyi hangi attribute'ten okuduğu.
 ///
-/// M2'de bu eşleme basittir ve <b>yer tutucudur</b>: 05 §5, seçim fonksiyonunun
-/// M2 planında kilitlenmesini istiyor. Dört hücum taktiğinin ayrı dağılımları ve
-/// composite rating'ler M4'te gelir. Burada 18 attribute'dan var olanlar kullanılır;
-/// hiçbir yeni attribute veya gizli ceza uydurulmamıştır.
+/// M4'te bu tip yalnız **kimlik** taşır: aksiyon, şut türü ve beceri okuma
+/// kanalı. Ağırlık kaldırıldı çünkü 05 §5 dağılımın <b>taktiğe bağlı</b> olduğunu
+/// söyler; tek bir düz vektör dört taktığı ifade edemez. Ağırlıklar artık
+/// <see cref="TacticsModel"/> içindedir ve <c>OffensivePolicy</c> tarafından
+/// normalize edilerek uygulanır.
+///
+/// <see cref="Skill"/> ham bir attribute okur. Oyuncu seçiminde kullanılan
+/// ağırlık bu değil, <c>PlayerRatingCalculator</c>'ın bounded composite'idir
+/// (D65); buradaki değer yalnız <b>isabet logitsine</b> girer.
 /// </summary>
 public sealed record ActionProfile
 {
     public required OffensiveAction Action { get; init; }
 
-    public required double Weight { get; init; }
-
     public required ShotType ShotType { get; init; }
 
+    /// <summary>İsabet bölümünde okunacak ham beceri attribute'ü (0-100).</summary>
     public required Func<PlayerRatings, int> Skill { get; init; }
 
     /// <summary>
-    /// 05 §5'teki PickAndRoll örnek dağılımı, tacticsiz M2 için başlangıç karması
-    /// olarak kullanılır. 05, diğer taktiklerin dağılımlarını henüz vermedi.
+    /// Oyuncu seçiminde kullanılacak bounded composite. 05 §76 ham rating
+    /// çarpanının yoğunlaştırma ürettiğini söyler; bu yüzden seçim ağırlığı
+    /// composite üzerinden hesaplanır, bu alandan okunmaz.
     /// </summary>
+    public required Func<PlayerRatings, int> SelectionComposite { get; init; }
+
     public static ImmutableArray<ActionProfile> Baseline { get; } =
     [
         new()
         {
             Action = OffensiveAction.PickAndRoll,
-            Weight = 0.45,
             ShotType = ShotType.MidRange,
             Skill = ratings => ratings.BallHandling,
+            SelectionComposite = ratings => PlayerRatingTables.Handle(ratings),
         },
         new()
         {
             Action = OffensiveAction.Drive,
-            Weight = 0.15,
             ShotType = ShotType.ClosePost,
             Skill = ratings => ratings.Vertical,
+            SelectionComposite = ratings => PlayerRatingTables.Athleticism(ratings),
         },
         new()
         {
             Action = OffensiveAction.SpotUp,
-            Weight = 0.15,
             ShotType = ShotType.ThreePoint,
             Skill = ratings => ratings.ThreePoint,
+            SelectionComposite = ratings => PlayerRatingTables.Scoring(ratings),
         },
         new()
         {
             Action = OffensiveAction.Isolation,
-            Weight = 0.10,
             ShotType = ShotType.MidRange,
             Skill = ratings => ratings.BallHandling,
+            SelectionComposite = ratings => PlayerRatingTables.Handle(ratings),
         },
         new()
         {
             Action = OffensiveAction.Cut,
-            Weight = 0.10,
             ShotType = ShotType.AtRim,
             Skill = ratings => ratings.OffBall,
+            SelectionComposite = ratings => PlayerRatingTables.Cutting(ratings),
         },
         new()
         {
             Action = OffensiveAction.PostUp,
-            Weight = 0.05,
             ShotType = ShotType.ClosePost,
             Skill = ratings => ratings.PostOffense,
+            SelectionComposite = ratings => PlayerRatingTables.Interior(ratings),
         },
         new()
         {
+            // 04 sözlüğünde var, M4 dağılımında ağırlığı 0.00. Bileşik olarak
+            // tutulur ama <c>OffensivePolicy</c> onu aday listesine almaz.
             Action = OffensiveAction.OffBallScreen,
-            Weight = 0.0,
             ShotType = ShotType.MidRange,
             Skill = ratings => ratings.OffBall,
+            SelectionComposite = ratings => PlayerRatingTables.Cutting(ratings),
         },
     ];
 }
@@ -330,6 +340,24 @@ public sealed record EngineConfig
     /// <summary>M3'te eklendi: serbest atış isabet modeli.</summary>
     public required FreeThrowModel FreeThrows { get; init; }
 
+    /// <summary>M4: dört hücum taktiğinin aksiyon dağılımları (D57/D62).</summary>
+    public required TacticsModel Tactics { get; init; }
+
+    /// <summary>M4: savunma policy katsayıları (D57).</summary>
+    public required DefenseModel Defense { get; init; }
+
+    /// <summary>M4: enerji/stamina modeli (D58, D63).</summary>
+    public required FatigueModel Fatigue { get; init; }
+
+    /// <summary>M4: tempo ayarları (D59).</summary>
+    public required PaceModel Pace { get; init; }
+
+    /// <summary>
+    /// M4: seçim ağırlığı yayılımı (D65). Ham rating çarpanı yerine bounded
+    /// aralık; 0.6'da taban 0.4, tepe 1.6.
+    /// </summary>
+    public required double SelectionSpread { get; init; }
+
     public required ImmutableArray<ActionProfile> ActionProfiles { get; init; }
 
     /// <summary>
@@ -345,6 +373,11 @@ public sealed record EngineConfig
         Actions = ActionModel.Baseline,
         Fouls = FoulModel.Baseline,
         FreeThrows = FreeThrowModel.Baseline,
+        Tactics = TacticsModel.Baseline,
+        Defense = DefenseModel.Baseline,
+        Fatigue = FatigueModel.Baseline,
+        Pace = PaceModel.Baseline,
+        SelectionSpread = 0.6,
         ActionProfiles = ActionProfile.Baseline,
         MaxActionsPerMatch = 20_000,
     };
@@ -376,7 +409,7 @@ public sealed record EngineConfig
         AppendReal("midRangeBase", Shot.MidRangeBase);
         AppendReal("threePointBase", Shot.ThreePointBase);
         AppendReal("skillScale", Shot.SkillScale);
-        AppendReal("blockProbability", Shot.BlockProbability);
+        AppendReal("qualityScale", Shot.QualityScale);
         AppendReal("rimContactProbability", Shot.RimContactProbability);
 
         Append("setupActionMs", Actions.SetupActionMs);
@@ -395,10 +428,51 @@ public sealed record EngineConfig
         AppendReal("freeThrowBaseMakeProbability", FreeThrows.BaseMakeProbability);
         AppendReal("freeThrowSkillScale", FreeThrows.SkillScale);
 
-        foreach (var profile in ActionProfiles)
+        // M4: taktik, savunma, enerji ve tempo katsayilari. Dizi sirasi kanoniktir
+        // ve enum degerlerinin sirasi degismemelidir.
+        foreach (var profile in Tactics.Offensive.OrderBy(item => (int)item.Tactic))
         {
-            Append("action." + profile.Action, profile.Weight);
-            Append("shotType." + profile.Action, profile.ShotType);
+            Append($"tactic.{profile.Tactic}.shotBias", profile.ShotBias);
+            Append($"tactic.{profile.Tactic}.qualityBonus", profile.QualityBonus);
+
+            foreach (var weight in profile.Weights.OrderBy(item => (int)item.Action))
+            {
+                AppendReal($"tactic.{profile.Tactic}.weight.{weight.Action}", weight.Weight);
+            }
+        }
+
+        AppendReal("defense.blockBase", Defense.BlockBase);
+        AppendReal("defense.blockFromInteriorDefense", Defense.BlockFromInteriorDefense);
+        AppendReal("defense.pressureBase", Defense.PressureBase);
+        AppendReal("defense.pressureFromPerimeterDefense", Defense.PressureFromPerimeterDefense);
+        AppendReal("defense.foulFromAggression", Defense.FoulFromAggression);
+
+        Append("fatigue.startingEnergy", Fatigue.StartingEnergy);
+        AppendReal("fatigue.baselineDrainPerSecond", Fatigue.BaselineDrainPerSecond);
+        AppendReal("fatigue.baselineRecoveryPerSecond", Fatigue.BaselineRecoveryPerSecond);
+        AppendReal("fatigue.breakRecoveryPerSecond", Fatigue.BreakRecoveryPerSecond);
+        AppendReal("fatigue.fatigueLogitScale", Fatigue.FatigueLogitScale);
+
+        foreach (var anchor in Fatigue.PerformanceCurve.OrderBy(item => item.Energy))
+        {
+            AppendReal($"fatigue.curve.{anchor.Energy}", anchor.Multiplier);
+        }
+
+        foreach (var tuning in Pace.Tunings.OrderBy(item => (int)item.Pace))
+        {
+            AppendReal($"pace.{tuning.Pace}.setup", tuning.SetupActionMultiplier);
+            AppendReal($"pace.{tuning.Pace}.drain", tuning.EnergyDrainMultiplier);
+        }
+
+        AppendReal("selectionSpread", SelectionSpread);
+
+        // M4: aksiyon agirligi artik profile degil, TacticsModel'e aittir (D62).
+        // Hash yalnizca kimlik alanlarini yazar; agirligin da zaten yukarida
+        // yazildigi icin burada tekrarlanmaz.
+        foreach (var profile in ActionProfiles.OrderBy(item => (int)item.Action))
+        {
+            Append("action." + profile.Action, (int)profile.Action);
+            Append("shotType." + profile.Action, (int)profile.ShotType);
         }
 
         Append("maxActionsPerMatch", MaxActionsPerMatch);

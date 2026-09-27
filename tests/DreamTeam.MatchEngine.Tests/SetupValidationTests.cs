@@ -169,8 +169,8 @@ public class SetupValidationTests
         lineupIds.Clear();
         players.Add(TestData.Player(42));
 
-        Assert.Equal(10, setup.Home.Roster.Length);
-        Assert.Equal(5, setup.HomeLineup.PlayerIds.Length);
+        Assert.Equal(10, setup.Home.Team.Roster.Length);
+        Assert.Equal(5, setup.Home.Lineup.PlayerIds.Length);
         Assert.True(MatchSetupValidator.Validate(setup).IsValid);
     }
 

@@ -1,7 +1,8 @@
 # M4 — Oyuncu/Taktik Kararlarının Etkisi: Uygulama Planı
 
-> **Durum:** Onay bekliyor. Bu plan 27 Eylül 2026'da hazırlandı. Uygulama kodu
-> yazılmadı.
+> **Durum:** Uygulandı ve doğrulandı (27 Eylül 2026). Aşağıdaki kabul tablosu
+> gerçek koşu sonuçlarıyla dolduruldu. Sapmalar §12'de kayıtlı, bulunan hatalar
+> §13'te.
 >
 > **Kapsam:** Tactics/pace girdisi, 4+4 policy, bounded composite rating'ler,
 > savunma çözümü, ShotQuality, enerji/stamina, OVR (gösterim amaçlı).
@@ -387,20 +388,42 @@ dağılımı" ister). Bu M6'nın kalibrasyon girdisidir.
 **T11 hâlâ uygulanamaz değil** (M3'te yazıldı, korunur). **T13–T16 M5'te.**
 T17/T18 M6'da.
 
-## 10. Kabul kriterleri
+## 10. Kabul kriterleri — gerçek koşu sonuçları
 
-| Kriter | Nasıl doğrulanır |
-|---|---|
-| Temiz build | `dotnet build -c Release` → 0 uyarı, 0 hata |
-| Tüm testler geçti | `dotnet test -c Release` ve `-c Debug` → yeşil; M1–M3 dahil |
-| Action dağılımları normalize | `EveryTacticDistributionSumsToOne` |
-| Politika değişimi karışımı etkiler | `ControlledTacticChangeShiftsActionMix`, `ControlledTacticChangeShiftsShotTypeMix` |
-| Energy sınırları ve dakika muhasebesi | T12a–T12f |
-| Şans nedeniyle tek maç sonucu yönü **zorunlu test yapılmaz** | 09 §64. Tek maçta taktik kazandı/yenildi testi yazılmayacak |
-| Motor saf C# | `dotnet list package` → MatchEngine'da sıfır paket |
-| Beyan edilen sözleşme değişiklikleri | `git diff` gözden geçirilir; `MatchClock`/`IRandomSource`/`SeededRandom` **dokunulmamış** olur |
-| OVR girdi değil | T03 |
-| Eksiklik bildirimi | Console çıktısı M4'te hâlâ eksik olanları yazar |
+| Kriter | Nasıl doğrulandı | Sonuç |
+|---|---|---|
+| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | **0 uyarı, 0 hata** |
+| Tüm testler geçti | `dotnet test -c Release` | **222/222** |
+| Tüm testler geçti (Debug) | `dotnet test -c Debug` | **222/222** |
+| Motor saf C# | `dotnet list package` (MatchEngine, Simulator) | **Sıfır paket** |
+| Determinism | Simulator çıktısının SHA256'ı, iki ayrı koşu | `BAFCDE8D6884B7ECD34E0C697562EB6324D89A8BF8E7C50D2DB19B52FC0DEF9D` — **iki koşuda aynı** |
+| Action dağılımları normalize | `EveryTacticDistributionSumsToOne` | 4/4 taktik 1.00 |
+| 16 policy kombinasyonu oynanabilir | `AllTwelveTacticPairsAreSimulable` | 16/16 Completed |
+| Politika değişimi karışımı etkiler | `ControlledTacticChangeShiftsActionMix`, `ControlledTacticChangeShiftsShotTypeMix` | InsidePost ↑ PostUp/ClosePost, PerimeterMotion ↑ Cut/SpotUp/3P |
+| Energy sınırları ve dakika muhasebesi | T12a–T12f | `5 × elapsed` eşitliği 6 basamağa kadar doğru |
+| OVR girdi değil | T03 | Farklı ağırlık seti → **bit düzeyinde aynı event akışı** |
+| Şans nedeniyle tek maç sonucu yönü **zorunlu test yapılmadı** | 09 §64 | — |
+| `MatchClock`/`IRandomSource`/`SeededRandom`/`Advance` dokunulmadı | `git diff` | Doğrulandı |
+| Eksiklik bildirimi | Console çıktısı | M4'te kalan boşlukları yazıyor |
+
+### Gözlenen tek maç (seed 20260927, **denge kanıtı değildir**)
+
+`112-118`, **5 periyot (uzatma)**, 3180.0 s, 237 possession, FG 48-93 / 48-89,
+3P 7-16 / 7-12, FT 9-10 / 15-16, PF 16 / 13, BLK 3 / 3, TOV 30 / 32.
+
+Enerji: başlayanlar 95 / 93 / 92 / 100 / 100 (sırasıyla 53.0 / 53.0 / 53.0 /
+44.1 / 40.3 dk). **Foul-out yedeklemesi gözleniyor**: 1-3 ve 1-1 sahadan çıktı,
+yerlerine 1-5 ve 1-6 girdi (12.7 dk / 91 enerji ve 8.9 dk / 90 enerji).
+
+Skor yüksek; savunma rotasyonu/kapanış modeli henüz yok (M5/M6). Denge ölçümü
+M6'nın işidir.
+
+### Kritik hash / kimlik
+
+- `EngineVersion.Current = "0.1.0"` (değişmedi), `RngIdentity` SplitMix64 v1.
+- `ConfigHash` M3'te `d9f0df73ddf1f89c` idi, **M4'te `b043cfa08c4baecf`**.
+- `EventSchemaVersion` 1 → 2 → **3**.
+- `rules-v0.2-simple-nba` profili korundu (D31).
 
 ## 11. Bilinçli olarak yapılmayacaklar
 
@@ -433,3 +456,59 @@ T17/T18 M6'da.
 **M5** (müdahale ve replay): `Advance` imzası manager command listesiyle genişler;
 `PlayerMatchState` ve `TeamMatchSetup` serileştirilir; timeout, substitution
 pencereleri, canlı taktik/pace değişimi, steal atfedimi, AI fallback.
+
+## 12. Uygulama sapmaları
+
+| # | Sapma | Neden |
+|---|---|---|
+| 1 | **Kalite cezaları ve IQ terimi 0-1 yerine 0-100 kalite puanı ölçeğinde** | `ShotQualityResolver` kaliteyi tam sayı döndürüyordu. 05 §6'nın 0-1 ölçeğindeki cezaları (Drop PnR 0.07 vs Switch 0.02) doğrudan taşımak farkı yuvarlamada yok ediyordu: ikisi de 52'ye yuvarlanıyordu ve policy'ler arası fark **gözlenemiyordu**. Ölçek doğrudan puana çevrildi (Drop −7, Switch −2, Zone Drive −5, Zone SpotUp +4, ManToMan PnR −3). D71 |
+| 2 | **`PlayerMatchState.Energy` ve `SecondsOnCourt` `double`** | İkisi de hesap sırasında yuvarlanınca kayıp oluyordu. Enerji için 8 saniyelik dilimlerde `Math.Round(99.98) = 100` ile **enerji hiç düşmüyordu**; süre için her 1500 ms'lik şut uçuşu 0.5 saniye kaybediyordu ve T12c eşitliği bozuluyordu. D72 |
+| 3 | **Periyot arası toparlanma süresi `_state.Clock.GameClockMs`'ten değil önceki periyotun tam süresinden okunur** | Periyot bittiğinde oyun saati zaten 0'dır; saatten okumak toparlanmayı daima sıfır bırakıyordu (sessiz etkisiz mekanizma). D73 |
+| 4 | **Savunma disiplini `Math.Clamp` tavanı 1.0** (0.95 değil) | 0.95 gibi keyfî bir tavan `FoulProbabilityPerAction = 1.0` kullanan M3 fixture'larını sessizce zayıflatıyordu ve M4'te gerçek bir hataya yol açtı. Olasılık zaten [0,1] aralığındadır. D74 |
+| 5 | **Enerji katsayıları yeniden ölçeklendi** (`BaselineDrainPerSecond` 0.0055 → 0.08) | İlk değer 48 dakikada ~3 puan kaybettiriyordu; yorgunluk kanalı ölüydü. Yeni değer Stamina 78'de tam maç başına ~50 puan. Hâlâ kalibre değil. D75 |
+| 6 | **`ActionProfile.SelectionComposite` alanı eklendi**; `Weight` kaldırıldı | §3'te tarif edilmişti; uygulamada iki kanal (ham `Skill` ve composite) ayrı ayrı okunması gerekiyordu, aksi halde seçim ağırlığı ham rating'ten gelirdi. |
+| 7 | **`TeamMatchState.Bench` türetilmiş bir erişimci** | 04 §28'de `Bench` ayrı bir alan; ayrı liste M5'in substitution işi. Türetmek iki kaynak riskini önler. |
+| 8 | **M2 testlerinin iki öncülü genişletildi** (`M2TestData.Config` yeni config alanları, `TestData.Setup` lineup parametrelerini korur) | D61'in mekanik test maliyeti. Test sayısı ve anlamı değişmedi. |
+| 9 | **M3 testlerinin üç varsayımı M3'ün gerçek davranışına göre düzeltildi** | `AndOneAwardsExactlyOneFreeThrow` artık blokların varlığını hesaba katıyor; `TeamFoulCounterResetsEachPeriod` faul oranını 0.15'e çekti (1.0'da mac D43 ile Aborted oluyordu); iki uzatma testi düşük skorlu profile geçti (varsayılan config'de 120 seed'de uzatma gözlenmiyordu). |
+| 10 | **`ShotClockExhaustionEndsThePossessionWithoutAKick` iki teste bölündü** | Hiç puan atılamayan bir fixture'da 0-0 beraberlik **sonsuz uzatmaya** yol açıyor. 08 T10'e göre doğru davranış guard → `Aborted`; bu artık ayrı bir test (`DegenerateZeroScoreMatchIsAbortedByTheGuardWithoutFalsifyingTheScore`). Uzatma sayısı üst sınırı **kilitlenmedi** — bkz. risk 3. |
+
+## 13. Bulunan ve düzeltilen motor hataları (regresyon testli)
+
+| Hata | Belirti | Test |
+|---|---|---|
+| **Şut denemesinde shooting olmayan savunma faulü hiç kaydedilmiyordu** (M3'ten kalan) | `ApplyFoul` yalnız `isShooting` doğrulandığında çağrılıyordu. Kalan savunma faulleri **sessizce kayboluyordu**: kisisel faul sayacı, takım faul sayacı ve bonus hiç tetiklenmiyordu. Gözlenen PF 2/5 (olması gereken ~14/12) | `TeamFoulCounterResetsEachPeriod`, `EveryLiveMissLeadsToReboundOrFreeThrowSeriesOrHorn` |
+| **Enerji hiç düşmüyordu** | Her 8 saniyelik dilimde `Math.Round(99.98) = 100`; kesirli drain geri dönüyordu | `EnergyDrainIsBoundedAndNeverNegative`, `PaceChangesEnergyDrain` |
+| **Yorgunluk performans eğrisi ölüydü** | `PerformanceMultiplier` 100'ün altındaki **her** enerji için en üst kancayı döndürüyordu. 80 üzeri enerjide `fatigueLoad = 0`, yani yorgunluk şuta hiç girmiyordu | `PerformanceCurveInterpolatesBetweenAnchors` |
+| **İnterpolasyon ters yöndeydi** | `ratio = (energy - upper) / span` negatif çıkıyor, sonuç `lower`'ın altına iniyordu: energy 90 → 1.005 (1.00'den **yüksek**) | `PerformanceCurveInterpolatesBetweenAnchors`, `PerformanceCurveIsMonotonicAndBounded` |
+| **Enerji katsayısı ~20 kat küçüktü** | 48 dakikada ~3 puan; eğri hiç görünmüyordu | `PaceChangesEnergyDrain` |
+| **Periyot arası toparlanma hiç uygulanmıyordu** | Süre, periyot bittikten sonra sıfırlanmış oyun saatinden okunuyordu → daima 0 | `PeriodBreakRecoveryDoesNotCountAsCourtTime` |
+| **Dakika muhasebesi eksik tutuluyordu** | `ConsumeLive`, periyot sonunda saatin kırpıp **atladığı** süreyi oyunculara yazıyordu (istenen değil gerçekten oynanan süre kullanılmıyordu). Toplam `5 × elapsed`'dan 90 s sapıyordu | `MinuteAccountingSumsCorrectly` |
+| **Her adımda yarım saniye kaybı** | `SecondsOnCourt` uzun tip + `1500/1000 = 1` kesme | `MinuteAccountingSumsCorrectly` |
+| **`OffBall` composite tablosunda eksikti** | 18 attribute'un tamamı tabloda geçmiyordu (bütünlük testi buldu) | `EveryRatingAttributeIsInTheTable` |
+| **T12f oynanmayan bir durumu doğruluyordu** | Maç başında herkes 100'de; yedek toparlanması kırpılıp hiç değişmiyordu, "on oyuncu güncelleniyor" iddiası boştu | `AllTenPlayersUpdateOnEveryLiveInterval` |
+
+### Hâlâ açık riskler (M4 sonrası)
+
+1. **Katsayılar kalibre değil.** Savunma rotasyonu/kapanış modeli yok; skor 112-118.
+   10K/100K deneyi M6'da. M4'ün kabul ettiği "tek maç sonucu yönü" ölçümü
+   bilinçli olarak **yapılmadı** (09 §64).
+2. **Uzatma üst sınırı tanımsız.** Puan atılamayan bir fixture'da 0-0 beraberlik
+   uzatmayı sürdürüyor; motor yalnız eylem guard'ı ile kesiyor ve 521 periyot
+   üretebiliyor. 08 T10 "guard → Aborted" dediği için bu **spec'e uygun** ama
+   ürün kararı değil. M5'e girmeden karar verilmeli: uzatma sayısı sınırlansın
+   mı (ve sınırdan sonra `Aborted` mı, beraberlik mi) ya da bu kabul mü, görünmez
+   mi? Kayda geçti, karar verilmedi.
+3. **Uzatmada dakika kaydı gerçek değil.** `PeriodsPlayed` uzatmayı içerir ama
+   uzatma periyodu için `SecondsOnCourt` daha az olur (5 kişi × daha kısa süre).
+   Bu doğru davranıştır; `T12c` testi `elapsed` üzerinden tanımlı olduğu için
+   tutarlıdır.
+4. **Enerji etkisi ölçülebilir ama zayıf.** Maç sonunda başlayanlar ~92-95
+   enerjide; `fatigueLoad` ≈ 0.05. Bu, M3'teki "hiç etki yok" durumundan ilerleme
+   ama henüz dönüşümlü bir sistem değil. Regresyon testleri kanalın **açık** olduğunu
+   sabitliyor; M6 nicel etkiyi ölçecek.
+5. **`MatchResult` tüm event'leri bellekte tutuyor** ve `PlayerEnergy` eklendi.
+   08 §8'in bellek sınırlı özet kipi M6'nın işi.
+6. **`ImmutableArray<T>` JSON serileştirilmesi doğrulanmadı.** M5 replay
+   serileştirmesinde ilk test edilecek yer.
+7. **CI yok.** Doğrulama yalnızca yerel.
+8. **T03 ve T12 artık uygulanabilir ve yazıldı**; T13–T18 hâlâ M5/M6'da.

@@ -4,20 +4,21 @@ Son güncelleme: 27 Eylül 2026.
 
 ## Şu anda
 
-- Aşama: Planlama. **M3 tamamlandı; M4 planı yazıldı ve onay bekliyor.**
-- Aktif milestone: **M4 (oyuncu/taktik kararlarının etkisi) — plan hazır, uygulama yetkisi yok.**
-- Uygulama yetkisi: **M3 için verildi ve kullanıldı.** M4 için yetki **yok**.
-- Git: `main` == `origin/main` (`3d6caba`).
-- Monte Carlo: **0 maç.** 158 test içinde 40–400 seed'li smoke koşular var; 10K/100K deneyi **çalıştırılmadı** (M6).
+- Aşama: Uygulama. **M4 tamamlandı ve doğrulandı.**
+- Aktif milestone: **M4 bitti → sırada M5 (yönetici müdahalesi ve replay).**
+- Uygulama yetkisi: **M4 için verildi ve kullanıldı** (plan onaylandı, D57–D68 kilitlendi). M5 için yetki **yok**.
+- Git: `main` == `origin/main` (M4 commit'i ile eşitlendi; push sonrası doğrulandı).
+- Monte Carlo: **0 maç.** 222 test içinde 40–400 seed'li smoke koşular var; 10K/100K deneyi **çalıştırılmadı** (M6).
 - DB / runtime / hosting: seçilmedi. M1–M4 bunlara ihtiyaç duymadı.
 
-## Son oturumda (M4 planlaması) yapılanlar
+## Son oturumda (M4 uygulaması) yapılanlar
 
-- Repo ve M3 doğrulaması tekrar kontrol edildi: çalışma ağacı temiz, ahead/behind 0/0, **158/158 test yeşil**. **Hiçbir tamamlanmış iş yeniden üretilmedi.**
-- Q07 zaten M3'te kapanmıştı. Bu oturumda **Q08, Q09, Q10** için karar alındı ve **Q08/Q09 tamamen, Q10 kısmen** kapandı.
-- `docs/plans/M4_IMPLEMENTATION_PLAN.md` yazıldı: 13 bölüm, M4'ün dürüst mevcut-durum tespiti, beyan edilen sözleşme değişiklikleri, RNG çağrı sırası revizyonu, 26 test senaryosu, bilinçli basitleştirmeler ve riskler.
-- Kararlar **D57–D68** kayda geçirildi.
-- **Kod yazılmadı.** Onay bekleyen tek şey: M4 planının uygulanmasına yetki.
+- M4 planı onaylandı; **D57–D68** kilitlendi, **D69–D78** uygulama kararları olarak kayda geçti.
+- **Oluşturulan motor dosyaları:** `Config/Tactics.cs` (3 enum + `TeamMatchSetup`), `Config/TacticsModel.cs`, `Config/DefenseModel.cs`, `Config/FatigueModel.cs`, `Config/PaceModel.cs`, `Core/PlayerMatchState.cs`, `Ratings/PlayerRatingTables.cs`, `Ratings/PlayerRatingCalculator.cs`, `Ratings/TeamRatingCalculator.cs`, `Tactics/OffensivePolicy.cs`, `Tactics/DefensivePolicy.cs`, `Actions/ShotQualityResolver.cs`, `Fatigue/FatigueCalculator.cs`.
+- **Değişenler:** `MatchSetup` (D61 `TeamMatchSetup`), `TeamMatchState` (+taktik/tempo/`PlayerStates`/`Bench`), `MatchState`, `MatchResult` (+`PlayerEnergy`, +OVR), `MatchSimulation` (yeni çağrı sırası, `ConsumeLive`, periyot arası toparlanma), `ShotMath`, `ShotResolver`, `BlockResolver`, `TurnoverResolver`, `FoulResolver`, `ReboundResolver`, `ActionSelector`, `EligibilityPolicy`, `MatchSetupValidator` (+taktik/tempo), `MatchSetupValidation` (+2 hata kodu), `MatchEventPayloads` (`ShotAttemptPayload` +2 alan), `EngineConfig` (+4 model, `QualityScale`, `SelectionSpread`).
+- **Yeni testler:** `M4TestData`, `RatingCompositeTests` (14), `TacticDistributionTests` (11), `DefensePolicyTests` (19), `PaceAndEnergyTests` (18). **158 → 222 test.**
+- **M1–M3 testleri güncellendi** (mekanik `TeamMatchSetup` geçişi + üç M3 varsayımının düzeltilmesi).
+- **10 gerçek hata bulundu ve düzeltildi**, hepsi regresyon testli. En kritik üçü: M3'ten kalan **kayıp savunma faulü** (D69), **enerjinin hiç düşmemesi** (D72) ve **yorgunluk kanalının fiilen ölü olması** (D73/D74 → `PerformanceMultiplier` ve `Interpolate` hataları).
 
 ## Son oturumda (M3 uygulaması) yapılanlar
 
@@ -104,11 +105,15 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 ## Kararlar
 
 - D31–D39 ve M2'de bulunan 5 gerçek kod hatası: `docs/10_DECISIONS_AND_OPEN_QUESTIONS.md` bölüm 7.
-- D40–D45 (M3 kilit kararları) ve D46–D56 (M3 uygulama kararları): aynı dosya bölüm 8 ve 9.
-- **D57–D68** (M4 planlama kararları): aynı dosya bölüm 10.
-- M3 plan sapmaları ve bulunan 9 hata: `docs/plans/M3_IMPLEMENTATION_PLAN.md` §12.
-- Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, Q07, **Q08, Q09**; **Q10'un "M4'te kapalı" yarısı** (dağılım/birim M6'ya açık).
-- Açık kalan: **Q10** (GameForm dağılımı/birimi — M6), Q11, Q13–Q18.
+- D40–D45 (M3 kilit), D46–D56 (M3 uygulama): aynı dosya bölüm 8 ve 9.
+- **D57–D68** (M4 kilit kararları): bölüm 10.
+- **D69–D78** (M4 uygulama kararları): bölüm 11. **D78 açık** (uzatma üst sınırı).
+- M3 sapmaları ve 9 hata: `docs/plans/M3_IMPLEMENTATION_PLAN.md` §12.
+- M4 sapmaları (10) ve 10 hata: `docs/plans/M4_IMPLEMENTATION_PLAN.md` §12 ve §13.
+- Kapanan açık sorular: Q04, Q05, Q06'nın yapısal kısmi, Q07, **Q08, Q09**;
+  **Q10'un "M4'te kapalı" yarısı**.
+- Açık kalan: **D78** (uzatma üst sınırı — M5 öncesi yanıtlanmalı), **Q10**
+  (GameForm dağılımı/birimi — M6), Q11, Q13–Q18.
 
 ## Kapsam dışı bırakılanlar (M3'te bilinçli olarak yok)
 
@@ -162,19 +167,16 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 ## Sonraki tek uygulanabilir görev
 
-**M4 planını onaylamak**, ardından uygulama yetkisi verildiğinde
-`docs/plans/M4_IMPLEMENTATION_PLAN.md`'yi uygulamak. Kapsam:
+**M5 planını yazmak** — kod yazmadan `docs/plans/M5_IMPLEMENTATION_PLAN.md`. Kapsam:
 
-- `TeamMatchSetup` (D61): `MatchSetup.Home`/`Away` tipi değişir, `HomeLineup`/`AwayLineup` kaldırılır. **M1–M3 testlerinde mekanik güncelleme gerekir.**
-- `OffensiveTactic` (4), `DefensiveTactic` (4), `Pace` (3) enum'ları; `TacticsModel` ile 4 hücum dağılımı.
-- `PlayerRatingCalculator` (bounded composite'ler) + `TeamRatingCalculator` (OVR, gösterim amaçlı) → **T03 uygulanabilir hâle gelir.**
-- `ShotQualityResolver` + `DefensivePolicy` (D57): savunma üç kanaldan etki eder (kalite, blok, baskı→top kaybı, disiplin→faul).
-- `PlayerMatchState` + `FatigueCalculator` (D58, D63, D64): enerji `[0,100]`, dakika muhasebesi → **T12 uygulanabilir hâle gelir.**
-- Tempo: aksiyon süresi + enerji drain çarpanı (D59). Top kaybı **etkilenmez**.
-- `BlockResolver` sabit olasılıktan rating türevine geçer; `TurnoverResolver` ve `FoulResolver` savunma kanalına girer.
-- `ShotAttemptPayload` +`ShotQuality`, +`ShooterEnergy` (D67); `EventSchemaVersion` 2→3.
-- Birincil savunmacı tek çekilişe iner (D68) — çağrı sayısı sabit +1, koşullu çekilişler kalkar.
-- `MatchClock`, `IRandomSource`, `SeededRandom`, `Advance` imzası **korunur**. `MatchSetupValidator` genişler (taktik/pace doğrulaması).
+- `Advance` imzasını manager command listesiyle genişletmek (kayıtlı planlı değişiklik).
+- `ManagerCommand`, `CommandQueue`, `CommandValidator`; CommandId/sıra/uygulama sınırı.
+- Taktik/tempo/substitution/timeout komutları; AI fallback; geç oyun politikası.
+- `PlayerMatchState` ve `TeamMatchSetup` serileştirme (T16); replay ile simulation
+  ayrımı.
+- **D78 yanıtlanmalı:** uzatma üst sınırı. Ürün kararıdır; motor kararı değildir.
+- Q11 (timeout hakkı, legal pencereler, late game) çözülmeli.
+- Steal atfedimi (D66) ve transition aksiyonu (D66) M5 adayıdır.
 
 ## Her oturum sonunda doldurulacak kayıt
 

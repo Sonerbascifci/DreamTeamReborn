@@ -63,7 +63,6 @@ internal static class M3TestData
             },
             Shot = config.Shot with
             {
-                BlockProbability = 0.0,
                 AtRimBase = 0.999,
                 ClosePostBase = 0.999,
                 MidRangeBase = 0.999,
@@ -100,6 +99,11 @@ internal static class M3TestData
         };
     }
 
+    /// <summary>
+    /// Her sut bloke edilir. M4'te blok sabit bir config sayisi degil, savunmacinin
+    /// ic savunma composite'inden turetilir; bu yuzden "her zaman blok" icin
+    /// savunma tabani yukseltilir.
+    /// </summary>
     public static EngineConfig AllBlocks(EngineConfig? source = null)
     {
         var config = source ?? M2TestData.Config();
@@ -107,7 +111,26 @@ internal static class M3TestData
         return config with
         {
             Fouls = config.Fouls with { FoulProbabilityPerAction = 0.0 },
-            Shot = config.Shot with { BlockProbability = 1.0 },
+            Defense = config.Defense with
+            {
+                BlockBase = 1.0,
+                BlockFromInteriorDefense = 0.0,
+            },
+        };
+    }
+
+    /// <summary>Hicbir sut bloke edilmez.</summary>
+    public static EngineConfig NoBlocks(EngineConfig? source = null)
+    {
+        var config = source ?? M2TestData.Config();
+
+        return config with
+        {
+            Defense = config.Defense with
+            {
+                BlockBase = 0.0,
+                BlockFromInteriorDefense = 0.0,
+            },
         };
     }
 
@@ -171,8 +194,8 @@ internal static class M3TestData
                 ClosePostBase = 0.24,
                 MidRangeBase = 0.20,
                 ThreePointBase = 0.18,
-                BlockProbability = 0.0,
             },
+            Defense = config.Defense with { BlockBase = 0.0, BlockFromInteriorDefense = 0.0 },
         };
     }
 
@@ -186,11 +209,17 @@ internal static class M3TestData
 
         return setup with
         {
-            Home = setup.Home with { Roster = [.. setup.Home.Roster.Take(5)] },
-            Away = setup.Away with { Roster = [.. setup.Away.Roster.Take(5)] },
+            Home = setup.Home with
+            {
+                Team = setup.Home.Team with { Roster = [.. setup.Home.Team.Roster.Take(5)] },
+            },
+            Away = setup.Away with
+            {
+                Team = setup.Away.Team with { Roster = [.. setup.Away.Team.Roster.Take(5)] },
+            },
         };
     }
 
     public static ImmutableArray<Domain.Players.Player> RosterOf(MatchSetup setup, TeamSide side) =>
-        side == TeamSide.Home ? setup.Home.Roster : setup.Away.Roster;
+        side == TeamSide.Home ? setup.Home.Team.Roster : setup.Away.Team.Roster;
 }

@@ -1,3 +1,4 @@
+using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Core;
 using DreamTeam.MatchEngine.Events;
 using DreamTeam.MatchEngine.Projection;
@@ -92,7 +93,9 @@ public class BoxScoreInvariantTests
             foreach (var miss in events.Where(e => e.Type == MatchEventType.ShotMissed))
             {
                 var shotId = miss.PayloadAs<ShotMissedPayload>().ShotId;
-                var foulId = FoulIdFor(events, shotId);
+                var attempt = events.FirstOrDefault(e =>
+                    e.Type == MatchEventType.ShotAttempt
+                    && e.PayloadAs<ShotAttemptPayload>().ShotId == shotId);
 
                 var nextAfterMiss = events.First(e => e.Sequence > miss.Sequence);
                 var horn = miss.GameClockMs == 0;
@@ -103,35 +106,41 @@ public class BoxScoreInvariantTests
                     continue;
                 }
 
-                if (foulId != 0)
+                if (attempt is not null)
                 {
-                    // Kacan shooting foul: ribaund yok, serbest atis var.
-                    Assert.NotEqual(MatchEventType.Rebound, nextAfterMiss.Type);
-                    continue;
+                    // D69: kacan SHOOTING faulda ribaund yok, serbest atis var.
+                    // Kacan NON-SHOOTING faulda ise top canlidir ve ribaund firsati
+                    // devam eder. Ayrim Foul payload'indan yapilir.
+                    var foul = events.FirstOrDefault(e =>
+                        e.Type == MatchEventType.Foul && e.ActionId == attempt.ActionId);
+
+                    if (foul is not null)
+                    {
+                        if (foul.PayloadAs<FoulPayload>().Type == FoulType.Shooting)
+                        {
+                            // Kacan shooting faul: serbest atis var, ribaund yok.
+                            Assert.NotEqual(MatchEventType.Rebound, nextAfterMiss.Type);
+                        }
+                        else
+                        {
+                            // Non-shooting faul: bonus aktifse serbest atis, degilse
+                            // canli ribaund. Ikisi de M3 kurallarina uyar.
+                            Assert.True(
+                                nextAfterMiss.Type
+                                    is MatchEventType.Rebound
+                                    or MatchEventType.FreeThrowAttempt,
+                                $"Faullu kacan sutun ardindaki beklenmeyen event: "
+                                + $"{nextAfterMiss.Type}");
+                        }
+
+                        continue;
+                    }
                 }
 
                 Assert.Equal(MatchEventType.Rebound, nextAfterMiss.Type);
                 Assert.Equal(shotId, nextAfterMiss.PayloadAs<ReboundPayload>().ShotId);
             }
         }
-    }
-
-    private static long FoulIdFor(IReadOnlyList<MatchEvent> events, long shotId)
-    {
-        var attempt = events.FirstOrDefault(e =>
-            e.Type == MatchEventType.ShotAttempt
-            && e.PayloadAs<ShotAttemptPayload>().ShotId == shotId);
-
-        if (attempt is null)
-        {
-            return 0;
-        }
-
-        // Faul, ShotAttempt'ten sonra ama settlement'tan once yazilir.
-        var foul = events.FirstOrDefault(e =>
-            e.Type == MatchEventType.Foul && e.ActionId == attempt.ActionId);
-
-        return foul is null ? 0 : foul.PayloadAs<FoulPayload>().FoulId;
     }
 
     [Fact]
@@ -187,7 +196,7 @@ public class BoxScoreInvariantTests
         foreach (var seed in Seeds)
         {
             var setup = M2TestData.NeutralMirror(seed);
-            var roster = setup.Home.Roster.Concat(setup.Away.Roster).Select(p => p.Id).ToHashSet();
+            var roster = setup.Home.Team.Roster.Concat(setup.Away.Team.Roster).Select(p => p.Id).ToHashSet();
             var result = Run(seed);
 
             foreach (var player in result.PlayerBoxScores)
@@ -205,7 +214,7 @@ public class BoxScoreInvariantTests
         foreach (var seed in Seeds)
         {
             var setup = M2TestData.NeutralMirror(seed);
-            var roster = setup.Home.Roster.Concat(setup.Away.Roster).Select(p => p.Id).ToHashSet();
+            var roster = setup.Home.Team.Roster.Concat(setup.Away.Team.Roster).Select(p => p.Id).ToHashSet();
             var result = Run(seed);
 
             foreach (var matchEvent in result.Events)

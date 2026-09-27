@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using DreamTeam.Domain.Players;
 using DreamTeam.Domain.Teams;
+using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Randomness;
 
 namespace DreamTeam.MatchEngine.Core;
@@ -63,21 +64,67 @@ public static class MatchSetupValidator
 
         ValidateEngineIdentity(setup.Engine, errors);
 
-        ValidateTeam(setup.Home, "Home", setup.HomeLineup, errors);
-        ValidateTeam(setup.Away, "Away", setup.AwayLineup, errors);
+        ValidateTeam(setup.Home, "Home", errors);
+        ValidateTeam(setup.Away, "Away", errors);
 
-        if (setup.Home is not null && setup.Away is not null && setup.Home.Id == setup.Away.Id)
+        if (setup.Home is not null && setup.Away is not null
+            && setup.Home.Team is not null && setup.Away.Team is not null
+            && setup.Home.Team.Id == setup.Away.Team.Id)
         {
             Add(
                 errors,
                 MatchSetupErrorCode.SameTeamOnBothSides,
-                "Away.Id",
+                "Away.Team.Id",
                 "Home ve Away aynı takımı gösteremez.");
         }
 
         return errors.Count == 0
             ? MatchSetupValidationResult.Valid
             : new MatchSetupValidationResult(errors);
+    }
+
+    /// <summary>
+    /// M4: taktik ve tempo enum değerlerini doğrular (D61).
+    ///
+    /// Bunlar enum oldukları için derleme düzeyinde geçerli değerlerdir; kontrol
+    /// yine de yapılır çünkü <b>fixture dosyasından</b> veya deserialize edilmiş
+    /// veriden gelen bir setup'ta tanımsız bir değer mümkündür (M6'da). Sessizce
+    /// varsayılana düşmek, kullanıcıya "Balanced oynadık" derken başka bir
+    /// taktik oynamak demektir.
+    /// </summary>
+    private static void ValidateTactics(TeamMatchSetup? setup, string side, List<MatchSetupValidationError> errors)
+    {
+        if (setup is null)
+        {
+            return;
+        }
+
+        if (!Enum.IsDefined(setup.Offensive))
+        {
+            Add(
+                errors,
+                MatchSetupErrorCode.UnknownTactic,
+                $"{side}.Offensive",
+                $"Tanımsız hücum taktiği: {(int)setup.Offensive}.");
+        }
+
+        if (!Enum.IsDefined(setup.Defense))
+        {
+            Add(
+                errors,
+                MatchSetupErrorCode.UnknownTactic,
+                $"{side}.Defense",
+                $"Tanımsız savunma policy'si: {(int)setup.Defense}.");
+        }
+
+        if (!Enum.IsDefined(setup.Pace))
+        {
+            Add(
+                errors,
+                MatchSetupErrorCode.UnknownPace,
+                $"{side}.Pace",
+                $"Tanımsız tempo: {(int)setup.Pace}.");
+        }
     }
 
     private static void ValidateEngineIdentity(EngineIdentity? engine, List<MatchSetupValidationError> errors)
@@ -131,28 +178,43 @@ public static class MatchSetupValidator
     }
 
     /// <summary>Bir takımı ve onun lineup'ını doğrular.</summary>
+    /// <summary>
+    /// M4'te imza değişti: takım, lineup ve taktikler artık tek
+    /// <see cref="TeamMatchSetup"/> içinde (D61). Doğrulama kapsamı aynıdır —
+    /// kadro, lineup, kimlik — artı taktik/tempo enum'ları.
+    /// </summary>
     private static void ValidateTeam(
-        Team? team,
+        TeamMatchSetup? setup,
         string side,
-        Lineup? lineup,
         List<MatchSetupValidationError> errors)
     {
+        ValidateTactics(setup, side, errors);
+
+        if (setup is null)
+        {
+            Add(errors, MatchSetupErrorCode.TeamMissing, side, $"{side} takımı null olamaz.");
+            ValidateLineup(null, side, rosterUsable: false, rosterIds: null, errors);
+            return;
+        }
+
+        var team = setup.Team;
+
         if (team is null)
         {
             Add(errors, MatchSetupErrorCode.TeamMissing, side, $"{side} takımı null olamaz.");
-            ValidateLineup(lineup, side, rosterUsable: false, rosterIds: null, errors);
+            ValidateLineup(setup.Lineup, side, rosterUsable: false, rosterIds: null, errors);
             return;
         }
 
         if (team.Id == Guid.Empty)
         {
-            Add(errors, MatchSetupErrorCode.TeamIdMissing, $"{side}.Id", $"{side}.Id Guid.Empty olamaz.");
+            Add(errors, MatchSetupErrorCode.TeamIdMissing, $"{side}.Team.Id", $"{side}.Id Guid.Empty olamaz.");
         }
 
         var rosterIds = new HashSet<Guid>();
         var rosterUsable = ValidateRoster(team.Roster, side, rosterIds, errors);
 
-        ValidateLineup(lineup, side, rosterUsable, rosterIds, errors);
+        ValidateLineup(setup.Lineup, side, rosterUsable, rosterIds, errors);
     }
 
     private static bool ValidateRoster(

@@ -30,6 +30,11 @@ internal static class M2TestData
         ActionModel? actions = null,
         FoulModel? fouls = null,
         FreeThrowModel? freeThrows = null,
+        TacticsModel? tactics = null,
+        DefenseModel? defense = null,
+        FatigueModel? fatigue = null,
+        PaceModel? pace = null,
+        double? selectionSpread = null,
         ImmutableArray<ActionProfile>? actionProfiles = null,
         int? maxActionsPerMatch = null)
     {
@@ -40,6 +45,11 @@ internal static class M2TestData
             Actions = actions ?? ActionModel.Baseline,
             Fouls = fouls ?? FoulModel.Baseline,
             FreeThrows = freeThrows ?? FreeThrowModel.Baseline,
+            Tactics = tactics ?? TacticsModel.Baseline,
+            Defense = defense ?? DefenseModel.Baseline,
+            Fatigue = fatigue ?? FatigueModel.Baseline,
+            Pace = pace ?? PaceModel.Baseline,
+            SelectionSpread = selectionSpread ?? EngineConfig.Baseline.SelectionSpread,
             ActionProfiles = actionProfiles ?? ActionProfile.Baseline,
             MaxActionsPerMatch = maxActionsPerMatch ?? EngineConfig.Baseline.MaxActionsPerMatch,
         };
@@ -62,12 +72,36 @@ internal static class M2TestData
         return new MatchSetup
         {
             MatchId = MatchId(1),
-            Home = MirrorTeam(teamIndex: 1, "Kuzey"),
-            Away = MirrorTeam(teamIndex: 2, "Guney"),
-            HomeLineup = MirrorLineup(teamIndex: 1),
-            AwayLineup = MirrorLineup(teamIndex: 2),
+            Home = MirrorTeamSetup(teamIndex: 1, "Kuzey"),
+            Away = MirrorTeamSetup(teamIndex: 2, "Guney"),
             Seed = seed,
             Engine = Identity(),
+        };
+    }
+
+    /// <summary>
+    /// M4: taktik ve tempolari verilen iki takim. Varsayilan taraflar
+    /// Balanced/ManToMan/Normal'dir; taktik etkisi kontrollu olarak
+    /// <see cref="WithTactics"/> ile degistirilir.
+    /// </summary>
+    public static MatchSetup WithTactics(
+        ulong seed,
+        OffensiveTactic homeOffense,
+        DefensiveTactic homeDefense,
+        Pace homePace,
+        OffensiveTactic? awayOffense = null,
+        DefensiveTactic? awayDefense = null,
+        Pace? awayPace = null)
+    {
+        var baseSetup = NeutralMirror(seed);
+
+        return baseSetup with
+        {
+            Home = baseSetup.Home.WithTactics(homeOffense, homeDefense, homePace),
+            Away = baseSetup.Away.WithTactics(
+                awayOffense ?? homeOffense,
+                awayDefense ?? homeDefense,
+                awayPace ?? homePace),
         };
     }
 
@@ -77,10 +111,8 @@ internal static class M2TestData
         return new MatchSetup
         {
             MatchId = MatchId(2),
-            Home = ScaledTeam(teamIndex: 1, "Guclu", strongBonus),
-            Away = ScaledTeam(teamIndex: 2, "Zayif", 0),
-            HomeLineup = MirrorLineup(teamIndex: 1),
-            AwayLineup = MirrorLineup(teamIndex: 2),
+            Home = TeamMatchSetup.Default(ScaledTeam(teamIndex: 1, "Guclu", strongBonus), MirrorLineup(1)),
+            Away = TeamMatchSetup.Default(ScaledTeam(teamIndex: 2, "Zayif", 0), MirrorLineup(2)),
             Seed = seed,
             Engine = Identity(),
         };
@@ -92,10 +124,8 @@ internal static class M2TestData
         return new MatchSetup
         {
             MatchId = MatchId(3),
-            Home = OrderedTeam(teamIndex: 1, "Kuzey", reverse),
-            Away = OrderedTeam(teamIndex: 2, "Guney", reverse),
-            HomeLineup = MirrorLineup(teamIndex: 1),
-            AwayLineup = MirrorLineup(teamIndex: 2),
+            Home = TeamMatchSetup.Default(OrderedTeam(teamIndex: 1, "Kuzey", reverse), MirrorLineup(1)),
+            Away = TeamMatchSetup.Default(OrderedTeam(teamIndex: 2, "Guney", reverse), MirrorLineup(2)),
             Seed = seed,
             Engine = Identity(),
         };
@@ -103,8 +133,14 @@ internal static class M2TestData
 
     public static ImmutableArray<Guid> OnCourtIds(MatchSetup setup)
     {
-        return [.. setup.HomeLineup.PlayerIds, .. setup.AwayLineup.PlayerIds];
+        return [.. setup.Home.Lineup.PlayerIds, .. setup.Away.Lineup.PlayerIds];
     }
+
+    public static ImmutableArray<Guid> HomeRosterIds(MatchSetup setup) =>
+        [.. setup.Home.Team.Roster.Select(player => player.Id)];
+
+    public static ImmutableArray<Guid> AwayRosterIds(MatchSetup setup) =>
+        [.. setup.Away.Team.Roster.Select(player => player.Id)];
 
     /// <summary>
     /// Event akisinin kararli metin parmak izi. Testlerde "ayni akis"i bayt bayt
@@ -159,15 +195,15 @@ internal static class M2TestData
         };
     }
 
-    private static Team MirrorTeam(int teamIndex, string prefix)
-    {
-        return new Team
-        {
-            Id = TeamId(teamIndex),
-            Name = prefix + " Yildizlari",
-            Roster = BuildRoster(teamIndex, 0),
-        };
-    }
+    private static TeamMatchSetup MirrorTeamSetup(int teamIndex, string prefix) =>
+        TeamMatchSetup.Default(
+            new Team
+            {
+                Id = TeamId(teamIndex),
+                Name = prefix + " Yildizlari",
+                Roster = BuildRoster(teamIndex, 0),
+            },
+            MirrorLineup(teamIndex));
 
     private static Team OrderedTeam(int teamIndex, string prefix, bool reverse)
     {

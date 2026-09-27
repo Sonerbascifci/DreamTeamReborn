@@ -269,17 +269,22 @@ public class ConfigHashTests
     }
 
     [Fact]
-    public void ActionProfileWeightsAreCoveredByTheHash()
+    public void TacticWeightsAreCoveredByTheHash()
     {
+        // M4'de agirligin sahibi TacticsModel'dir, ActionProfile degil (D62).
         var baseline = M2TestData.Config();
-        var profiles = baseline.ActionProfiles;
+        var profiles = baseline.Tactics.Offensive;
 
         var changed = profiles.ToArray();
-        changed[0] = changed[0] with { Weight = changed[0].Weight / 2.0 };
+        var first = changed[0];
+        var weights = first.Weights.ToArray();
+        weights[0] = new ActionWeight(weights[0].Action, weights[0].Weight / 2.0);
+        changed[0] = first with { Weights = [.. weights] };
 
         Assert.NotEqual(
             baseline.ComputeConfigHash(),
-            M2TestData.Config(actionProfiles: [.. changed]).ComputeConfigHash());
+            M2TestData.Config(tactics: baseline.Tactics with { Offensive = [.. changed] })
+                .ComputeConfigHash());
     }
 
     [Fact]

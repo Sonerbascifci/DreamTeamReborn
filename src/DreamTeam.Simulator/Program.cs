@@ -19,7 +19,7 @@ var config = EngineConfig.Baseline;
 var simulation = new MatchSimulation(config);
 var result = simulation.Simulate(setup);
 
-SingleMatchReport.Write(Console.Out, result, setup.Engine, simulation.ConfigHash);
+SingleMatchReport.Write(Console.Out, result, setup.Engine, simulation.ConfigHash, setup);
 
 return result.Status == MatchStatus.Completed ? 0 : 1;
 
@@ -45,10 +45,13 @@ internal static class Fixture
         return new MatchSetup
         {
             MatchId = MatchId(1),
-            Home = BuildTeam("Kuzey Yildizlari", teamIndex: 1),
-            Away = BuildTeam("Guney Yildizlari", teamIndex: 2),
-            HomeLineup = BuildLineup(teamIndex: 1),
-            AwayLineup = BuildLineup(teamIndex: 2),
+
+            // M4: takim girdisi TeamMatchSetup'tir (D61). Mirror fixture'ta
+            // iki taraf da ayni taktik ve tempo ile oynar; boylece fark yalniz
+            // baslangic protokolunden gelir. Taktik etkisi M4 testlerinde
+            // kontrollu olarak degistirilir.
+            Home = BuildTeamSetup("Kuzey Yildizlari", teamIndex: 1),
+            Away = BuildTeamSetup("Guney Yildizlari", teamIndex: 2),
             Seed = seed,
             Engine = new EngineIdentity
             {
@@ -60,6 +63,14 @@ internal static class Fixture
             },
         };
     }
+
+    private static TeamMatchSetup BuildTeamSetup(string name, int teamIndex) =>
+        TeamMatchSetup
+            .Default(BuildTeam(name, teamIndex), BuildLineup(teamIndex))
+            .WithTactics(
+                OffensiveTactic.Balanced,
+                DefensiveTactic.ManToMan,
+                Pace.Normal);
 
     private static Team BuildTeam(string name, int teamIndex)
     {

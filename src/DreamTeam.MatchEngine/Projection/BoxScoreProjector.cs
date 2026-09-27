@@ -43,12 +43,12 @@ public sealed class BoxScoreProjector
         ArgumentNullException.ThrowIfNull(setup);
         _setup = setup;
 
-        foreach (var player in setup.Home.Roster)
+        foreach (var player in setup.Home.Team.Roster)
         {
             _definitions[player.Id] = player;
         }
 
-        foreach (var player in setup.Away.Roster)
+        foreach (var player in setup.Away.Team.Roster)
         {
             _definitions[player.Id] = player;
         }
@@ -270,7 +270,7 @@ public sealed class BoxScoreProjector
         return new TeamBoxScore
         {
             Team = side,
-            TeamName = side == TeamSide.Home ? _setup.Home.Name : _setup.Away.Name,
+            TeamName = side == TeamSide.Home ? _setup.Home.Team.Name : _setup.Away.Team.Name,
             FieldGoalsMade = tally.Made,
             FieldGoalsAttempted = tally.Attempts,
             TwoPointersMade = tally.TwoMade,
