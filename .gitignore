@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Test / coverage output
+TestResults/
+*.coverage
+coverage*.json
+coverage*.xml
+
+# Simulator / balance reports (M6+): sonuçlar sürümlenir, çıktı üretimi sürümlenmez
+reports/

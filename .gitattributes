@@ -1,0 +1,13 @@
+# Depoda satır sonları LF olarak saklanır; çalışma ağacında da LF kalır.
+# Böylece farklı işletim sistemlerinde aynı içerik, aynı hash, aynı diff üretir.
+# Deterministik derleme ve replay için satır sonu kaynaklı değişiklik istenmez.
+* text=auto eol=lf
+
+# Windows betikleri zorla CRLF kalsın (gerekirse).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary dosyalar asla metin muamelesine uğramasın.
+*.png binary
+*.jpg binary
+*.ico binary
