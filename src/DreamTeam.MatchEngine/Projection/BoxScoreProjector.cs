@@ -54,46 +54,17 @@ public sealed class BoxScoreProjector
         }
     }
 
+    /// <summary>
+    /// Tüm event listesini işler. <see cref="Accumulate"/> üzerinden devreder;
+    /// imza korunur ve iki yol aynı sonucu verir.
+    /// </summary>
     public ProjectionResult Project(IReadOnlyList<MatchEvent> events)
     {
         ArgumentNullException.ThrowIfNull(events);
 
         foreach (var matchEvent in events)
         {
-            switch (matchEvent.Type)
-            {
-                case MatchEventType.ShotMade:
-                    CountMade(matchEvent);
-                    break;
-
-                case MatchEventType.ShotMissed:
-                    CountMissed(matchEvent);
-                    break;
-
-                case MatchEventType.Turnover:
-                    CountTurnover(matchEvent);
-                    break;
-
-                case MatchEventType.Rebound:
-                    CountRebound(matchEvent);
-                    break;
-
-                case MatchEventType.Foul:
-                    CountFoul(matchEvent);
-                    break;
-
-                case MatchEventType.FreeThrowAttempt:
-                    CountFreeThrowAttempt(matchEvent);
-                    break;
-
-                case MatchEventType.FreeThrowMade:
-                    CountFreeThrowMade(matchEvent);
-                    break;
-
-                case MatchEventType.Block:
-                    CountBlock(matchEvent);
-                    break;
-            }
+            Accumulate(matchEvent);
         }
 
         return new ProjectionResult(
@@ -102,6 +73,56 @@ public sealed class BoxScoreProjector
             [.. _players.Values
                 .OrderBy(tally => tally.PlayerId)
                 .Select(BuildPlayerBoxScore)]);
+    }
+
+    /// <summary>
+    /// M6: <b>tek event ekler</b>. 08 §8/§119: 100K koşuda event'ler bellekte
+    /// biriktirilemez; batch sürücüsü bu yöntemi çağırarak akıtır ve
+    /// <c>MatchResult</c> hiç üretmez.
+    ///
+    /// <para><b>Neden ikinci bir simülasyon yolu DEĞİLDİR.</b> Bu yöntem yeni
+    /// hiçbir kural tanımlamaz; yalnız mevcut <c>Project</c> döngüsünü tek
+    /// event'lik adımlara böler. <c>Project</c> hâlâ aynı kodu çağırır, dolayısıyla
+    /// 200+ mevcut test dokunulmadan yeşil kalır (H03).</para>
+    /// </summary>
+    public void Accumulate(MatchEvent matchEvent)
+    {
+        ArgumentNullException.ThrowIfNull(matchEvent);
+
+        switch (matchEvent.Type)
+        {
+            case MatchEventType.ShotMade:
+                CountMade(matchEvent);
+                break;
+
+            case MatchEventType.ShotMissed:
+                CountMissed(matchEvent);
+                break;
+
+            case MatchEventType.Turnover:
+                CountTurnover(matchEvent);
+                break;
+
+            case MatchEventType.Rebound:
+                CountRebound(matchEvent);
+                break;
+
+            case MatchEventType.Foul:
+                CountFoul(matchEvent);
+                break;
+
+            case MatchEventType.FreeThrowAttempt:
+                CountFreeThrowAttempt(matchEvent);
+                break;
+
+            case MatchEventType.FreeThrowMade:
+                CountFreeThrowMade(matchEvent);
+                break;
+
+            case MatchEventType.Block:
+                CountBlock(matchEvent);
+                break;
+        }
     }
 
     private void CountMade(MatchEvent matchEvent)

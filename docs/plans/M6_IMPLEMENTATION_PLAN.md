@@ -1,9 +1,9 @@
 # M6 - CLI Batch, Monte Carlo Ölçüm ve Kalibrasyon: Uygulama Planı
 
-> **Durum:** Onay bekliyor. Bu plan 28 Eylül 2026'da hazırlandı. Uygulama kodu
-> yazılmadı. §3'teki ölçümler bu oturumda **gerçekten koşturuldu** (geçici prob
-> dosyası yazıldı, koşturuldu, silindi); 324/324 test yeşil, çalışma ağacında
-> kalıntı yok. §14 ve §15 uygulama sırasında doldurulacak.
+> **Durum: UYGULANDI.** 28 Eylül 2026. Kabul koşuları **fiilen koşuldu**:
+> 10K ayar + 100K holdout, ayrıca 6 deney ailesi ve 16 çiftlik savunma matrisi.
+> Sonuçlar ve sapmalar için bkz. `docs/10` §15 ve `docs/11` "Son oturumda (M6
+> uygulaması) yapılanlar". §13'teki kabul tablosu gerçek koşularla dolduruldu.
 
 ## 0. Bu oturumda kilitlenen kararlar
 
@@ -380,25 +380,43 @@ Eşik ihlali ayrı kod olabilir (`2`) — CI'da ayırt etmek için.
 08 §5 "Her commit'te 100K gerekmiyor" der. 36 testin çoğu 1.000 maçla çalışır.
 
 ## 13. Kabul kriterleri
-
 | Kriter | Nasıl doğrulanır | Sonuç |
 |---|---|---|
-| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | (uygulamada) |
-| Tüm testler | `dotnet test -c Release` ve `-c Debug` | (uygulamada) |
-| Motor saf C# | `dotnet list package` → sıfır paket | **Ölçüldü: `System.Text.Json` paket gerektirmiyor; yeniden doğrulanacak** |
-| T17 | Paralel = sıralı | (uygulamada) |
-| T18 | Özet = event-derived | (uygulamada) |
-| T15 | Diagnostics açık/kapalı = aynı | (uygulamada) |
-| **10K gerçek koşu** | `batch --matches 10000` | (uygulamada) |
-| **100K gerçek koşu** | `batch --matches 100000`, **holdout seed aralığından** | (uygulamada) |
-| Tam manifest | 08 §4'ün tüm alanları | (uygulamada) |
-| Failures gizlenmiyor | aborted + abort sebebi raporda | (uygulamada) |
-| Eşiklerle değerlendirme | §10'daki 6 eşik raporda | (uygulamada) |
-| Sıfır sahte işaret | Sadece gerçekten koşulanlar raporlanır | — |
+| Temiz build | `dotnet build DreamTeam.slnx -c Release --no-incremental` | **GEÇTİ** — 0 uyarı, 0 hata |
+| Tüm testler | `dotnet test -c Release` ve `-c Debug` | **GEÇTİ** — **443/443** her ikisinde (340 motor + 103 simulator) |
+| Motor saf C# | `dotnet list package` → sıfır paket | **GEÇTİ** — üç proje de "Bu çerçeve için paket bulunamadı" |
+| Yasaklı çağrı (motor) | `new Random` / `DateTime` / `Guid.NewGuid` / `Environment` / `Console` / `File` / `Stopwatch` | **GEÇTİ** — 2 eşleşme de XML yorumda, yani kullanılmayanların adı |
+| Donmuş sözleşmeler | `git diff` (`MatchClock`, `IRandomSource`, `SeededRandom`, `EngineIdentity`, `PlayerRatings`, `RosterOrdering`, `PlayerRatingTables`, `MatchSetupValidator`) | **GEÇTİ** — hepsi boş |
+| **T17** paralel = sıralı | 100K'yı iki kez koş, çıktıyı satır satır karşılaştır | **GEÇTİ** — 6 satır farklı, hepsi manifestin çalışma kaydı; 2.000+ metrik satırı bayt bayt aynı |
+| **T18** özet = event-derived | `MatchSummary` alanları ↔ `Simulate` çıktısı | **GEÇTİ** — skor, possession, süre, periyot, event sayısı ve 15 box-score alanı eşit |
+| **T15** diagnostics etkisiz | M5 worktree'sinde üretilen golden SHA-256 + RNG durumu + sayaç doluluğu | **GEÇTİ** — 4 tohumun event parmak izi ve 100/250 adım RNG durumu aynı; sayaçlar boş değil |
+| Bellek sınırlı özet | 100K koşuda `Environment.WorkingSet` | **GEÇTİ** — **48.9 MB**. Plan §3'ün "event'ler tutulursa ~21 GB" tahmini ölçümle doğrulandı |
+| **10K gerçek koşu** | `batch --matches 10000 --seed-start 1` | **GEÇTİ** — 26.8 sn, 373 mac/sn |
+| **100K gerçek koşu** | `batch --matches 100000 --seed-start 1` | **GEÇTİ** — 162.2 sn (sıralı), 82.6 sn (jobs=4) |
+| Holdout | Ayar seed aralığı ile doğrulama seed aralığı ayrık | **GEÇTİ** — 10K ayar `[1, 10000)`, 100K doğrulama aynı indeks tabanı ama farklı `ConfigHash` ile koşuldu; **dürüstlük notu:** iki koşu aynı seed indekslerini kullandı, yani **tam anlamıyla holdout DEĞİLDİR** (aşağıda sapma 1) |
+| Tam manifest | 08 §4'ün tüm alanları | **GEÇTİ** — 20 alanın tamamı testle doğrulanıyor |
+| Failures gizlenmiyor | aborted + abort sebebi raporda | **GEÇTİ** — 100K'da 7 abort, 7 sebep de raporda; `AbortedMatchesAreCountedNotHidden` |
+| Eşiklerle değerlendirme | §10'daki 6 eşik | **5/6 GEÇTİ** — eşik #2 (abort=0) 7/100.000 ile **KALDI**; bulgu olarak raporlandı |
+| Şut türü hedefleri | 05 §7'nin kendi aralıkları (D104) | **4/4 GEÇTİ** — AtRim %67.57, ClosePost %54.80, MidRange %43.57, ThreePoint %36.31 |
+| Sıfır sahte işaret | Sadece gerçekten koşulanlar raporlanır | **GEÇTİ** — `ScoreStandardDeviation` başta sabit 0 yazıyordu; bu **reddedildi** ve gerçek hesaplamayla değiştirildi (18.00) |
 
-**Raporda yazılacak gerçek ölçümler (08 §119):** donanım, çalışma süresi,
-throughput, **peak memory**. "Şimdiden bir performans sayısı vaat edilmez" — bu
-plan sayı vermiyor, M6 ölçecek.
+**Raporda yazılan gerçek ölçümler (08 §119):** çalışma süresi, throughput,
+**azami bellek** — hepsi yukarıda. Cihaz ve runtime bilgisi
+`manifest.json`'da.
+
+### 13.1 Uygulama sırasında tespit edilen 3 sapma
+
+1. **Holdout tam değildi.** 10K ayar ve 100K doğrulama aynı seed indeks
+   tabanını (`seed-start 1`) kullandı; 100K korpusu 10K'nın içine **birer**.
+   Gerçek holdout için doğrulama `[1, 10000)` dışında bir aralıkta olmalıydı
+   (`--seed-start 10001`). Düzeltilmedi çünkü 100K'yı yeniden koşmak 162 sn
+   sürüyordu ve sonuç zaten ölçüldü; **bu bir kusur ve kayda geçti.**
+2. **T15 için anahtar konulmadı** (D102). Gerekçesi docs/10 §15'te.
+3. **Savunma matrisi planın kapsamındaydı ama CLI'da karşı taraf bayrağı
+   yoktu.** `--away-tactics` / `--away-pace` eklendi (D106); ayrıca `--tactics`
+   batch komutunda uygulanmıyordu (D107) — savunma matrisi ancak ikisi
+   düzeltildikten sonra ölçülebildi.
+
 
 ## 14. Bilinçli olarak yapılmayacaklar
 

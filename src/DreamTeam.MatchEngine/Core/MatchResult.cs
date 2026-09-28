@@ -89,6 +89,16 @@ public sealed record MatchResult
 
     /// <summary>Terminal durum değilse null.</summary>
     public string? AbortReason { get; init; }
+
+    // ------------------------------------------------ M6: diagnostics (D100)
+
+    /// <summary>
+    /// M6 (D100): kural sayaçları. <b>Rapor içindir; motor hiçbir yerde
+    /// okumaz.</b> M6 denge raporunun "hangi kural kaç kez tetiklendi"
+    /// bölümü buradan gelir.
+    /// </summary>
+    public DreamTeam.MatchEngine.Diagnostics.DiagnosticCounters Diagnostics { get; init; } =
+        DreamTeam.MatchEngine.Diagnostics.DiagnosticCounters.Empty;
 }
 
 /// <param name="PlayerId">Oyuncu kimliği.</param>

@@ -14,5 +14,5 @@ TestResults/
 coverage*.json
 coverage*.xml
 
-# Simulator / balance reports (M6+): sonuçlar sürümlenir, çıktı üretimi sürümlenmez
+# Simulator / balance reports (M6+): sonuclar URETILMEZ, cikti uretimi URETILMEZ
 reports/

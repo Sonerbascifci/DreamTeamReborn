@@ -128,6 +128,11 @@ public static class MatchStateFingerprint
                 .Append(command.TargetBoundary).Append('\n');
         }
 
+        // M6 (D100): diagnostics sayaclari. Snapshot round-trip'inin bu alani
+        // tasidigini dogrulamak icin parmak izine giriyor. T15 bunlarin domain
+        // sonucunu DEGISTIRMEDIGini ayrica test eder.
+        builder.Append("diagnostics|").Append(state.Diagnostics.ToReport());
+
         return builder.ToString();
     }
 

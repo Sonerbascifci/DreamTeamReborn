@@ -135,8 +135,10 @@ public class TimeoutTests
     {
         var rules = RulesProfile.SimpleNbaInspired;
 
-        // D89: bu sayi kaynaktan gelmiyor; motor varsayilani 3.
-        Assert.Equal(3, rules.ShortTimeoutsPerTeam);
+        // D98a (M6): bu sayi artik KAYNAKLI. M5'te bilincli olarak kaynaksiz
+        // bir yer tutucuydu (3) ve D89 olarak acik birakti; kullanicinin
+        // 28 Eylul 2026 tarihli karariyla NBA gercegi olan 5 benimsendi.
+        Assert.Equal(5, rules.ShortTimeoutsPerTeam);
 
         // Tam butce tukenmis olsa bile 20 saniyelik hak vardir.
         var spentFull = BuildTeam(timeoutUsed: 4, shortUsed: 0);
@@ -152,10 +154,20 @@ public class TimeoutTests
     public void TheShortTimeoutBudgetIsExhaustedSeparately()
     {
         var rules = RulesProfile.SimpleNbaInspired;
-        var spent = BuildTeam(timeoutUsed: 0, shortUsed: 3);
+
+        // D98a: butce artik 5. Test de butceye gore yazilir ki bir sonraki
+        // kullanicı kararinda test sessizce yanlis kalmasin.
+        var budget = rules.ShortTimeoutsPerTeam;
+        var spent = BuildTeam(timeoutUsed: 0, shortUsed: budget);
 
         Assert.False(TimeoutPolicy.CanSpend(
             spent, rules, MatchClock.Initial(), TimeoutKind.Short20, isFinalTwoMinutes: false));
+
+        // Bütçenin bir eksiğında hâlâ harcanabilir olmalı.
+        var oneLeft = BuildTeam(timeoutUsed: 0, shortUsed: budget - 1);
+
+        Assert.True(TimeoutPolicy.CanSpend(
+            oneLeft, rules, MatchClock.Initial(), TimeoutKind.Short20, isFinalTwoMinutes: false));
     }
 
     [Fact]

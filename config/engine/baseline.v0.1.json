@@ -1,0 +1,258 @@
+{
+  "SchemaVersion": 1,
+  "Version": "v0.1",
+  "EngineVersion": "0.1.0",
+  "RulesVersion": "rules-v0.2-simple-nba",
+  "Notes": "M5 baseline; D98a ShortTimeoutsPerTeam=5. M6 kalibrasyon AILESI 1 (ShotModel): 2000 mac olcumunde AtRim %68.17 (hedef 60-68) ve ThreePoint %43.33 (hedef 33-39) idi; ThreePointBase 0.36->0.293 (iki iterasyon), AtRimBase 0.64->0.63. Hedefler 05 S7 KENDI araliklari; NBA verisi kullanilmadi (D98c). AILESI 2 (ActionModel): mac basina 27.5 hucrem saati ihlali ve aksiyonlarin %46.5'i sut denemiyordu; ShotCompletionProbability 0.65->0.85.",
+  "Rules": {
+    "PeriodCount": 4,
+    "PeriodDurationMs": 720000,
+    "ShotClockMs": 24000,
+    "OvertimeDurationMs": 300000,
+    "OffensiveReboundShotClockMs": 14000,
+    "MaxOvertimePeriods": 2,
+    "FullTimeoutsPerTeam": 4,
+    "FullTimeoutsInFinalTwoMinutes": 2,
+    "ShortTimeoutsPerTeam": 5,
+    "OvertimeTimeoutBonus": 1,
+    "FinalTwoMinutesMs": 120000,
+    "TotalFullTimeouts": 4
+  },
+  "Shot": {
+    "AtRimBase": 0.63,
+    "ClosePostBase": 0.53,
+    "MidRangeBase": 0.415,
+    "ThreePointBase": 0.293,
+    "SkillScale": 0.6,
+    "QualityScale": 0.9,
+    "RimContactProbability": 0.7
+  },
+  "Actions": {
+    "SetupActionMs": 8000,
+    "ShotFlightMs": 1500,
+    "ShotCompletionProbability": 0.85,
+    "TurnoverProbability": 0.05,
+    "OffensiveReboundProbability": 0.26
+  },
+  "Fouls": {
+    "FoulProbabilityPerAction": 0.12,
+    "OffensiveFoulShare": 0.25,
+    "ShootingFoulShare": 0.45,
+    "BonusTeamFoulThreshold": 5,
+    "BonusFreeThrowCount": 2,
+    "PersonalFoulLimit": 6
+  },
+  "FreeThrows": {
+    "BaseMakeProbability": 0.78,
+    "SkillScale": 0.8
+  },
+  "Tactics": {
+    "Offensive": [
+      {
+        "Tactic": "Balanced",
+        "Weights": [
+          {
+            "Action": "PickAndRoll",
+            "Weight": 0.45
+          },
+          {
+            "Action": "Drive",
+            "Weight": 0.15
+          },
+          {
+            "Action": "SpotUp",
+            "Weight": 0.15
+          },
+          {
+            "Action": "Isolation",
+            "Weight": 0.1
+          },
+          {
+            "Action": "Cut",
+            "Weight": 0.1
+          },
+          {
+            "Action": "PostUp",
+            "Weight": 0.05
+          },
+          {
+            "Action": "OffBallScreen",
+            "Weight": 0
+          }
+        ],
+        "ShotBias": 0,
+        "QualityBonus": 0
+      },
+      {
+        "Tactic": "PickAndRoll",
+        "Weights": [
+          {
+            "Action": "PickAndRoll",
+            "Weight": 0.45
+          },
+          {
+            "Action": "Drive",
+            "Weight": 0.15
+          },
+          {
+            "Action": "SpotUp",
+            "Weight": 0.15
+          },
+          {
+            "Action": "Isolation",
+            "Weight": 0.1
+          },
+          {
+            "Action": "Cut",
+            "Weight": 0.1
+          },
+          {
+            "Action": "PostUp",
+            "Weight": 0.05
+          },
+          {
+            "Action": "OffBallScreen",
+            "Weight": 0
+          }
+        ],
+        "ShotBias": 0.02,
+        "QualityBonus": 0.03
+      },
+      {
+        "Tactic": "PerimeterMotion",
+        "Weights": [
+          {
+            "Action": "PickAndRoll",
+            "Weight": 0.12
+          },
+          {
+            "Action": "Drive",
+            "Weight": 0.18
+          },
+          {
+            "Action": "SpotUp",
+            "Weight": 0.25
+          },
+          {
+            "Action": "Isolation",
+            "Weight": 0.1
+          },
+          {
+            "Action": "Cut",
+            "Weight": 0.22
+          },
+          {
+            "Action": "PostUp",
+            "Weight": 0.13
+          },
+          {
+            "Action": "OffBallScreen",
+            "Weight": 0
+          }
+        ],
+        "ShotBias": 0.04,
+        "QualityBonus": 0.02
+      },
+      {
+        "Tactic": "InsidePost",
+        "Weights": [
+          {
+            "Action": "PickAndRoll",
+            "Weight": 0.1
+          },
+          {
+            "Action": "Drive",
+            "Weight": 0.15
+          },
+          {
+            "Action": "SpotUp",
+            "Weight": 0.1
+          },
+          {
+            "Action": "Isolation",
+            "Weight": 0.2
+          },
+          {
+            "Action": "Cut",
+            "Weight": 0.12
+          },
+          {
+            "Action": "PostUp",
+            "Weight": 0.33
+          },
+          {
+            "Action": "OffBallScreen",
+            "Weight": 0
+          }
+        ],
+        "ShotBias": -0.04,
+        "QualityBonus": 0.02
+      }
+    ]
+  },
+  "Defense": {
+    "BlockBase": 0.04,
+    "BlockFromInteriorDefense": 0.04,
+    "PressureBase": 0,
+    "PressureFromPerimeterDefense": 0.02,
+    "FoulFromAggression": 0
+  },
+  "Fatigue": {
+    "StartingEnergy": 100,
+    "BaselineDrainPerSecond": 0.08,
+    "BaselineRecoveryPerSecond": 0.012,
+    "BreakRecoveryPerSecond": 0.04,
+    "PerformanceCurve": [
+      {
+        "Energy": 100,
+        "Multiplier": 1
+      },
+      {
+        "Energy": 80,
+        "Multiplier": 0.99
+      },
+      {
+        "Energy": 60,
+        "Multiplier": 0.97
+      },
+      {
+        "Energy": 40,
+        "Multiplier": 0.92
+      },
+      {
+        "Energy": 25,
+        "Multiplier": 0.84
+      },
+      {
+        "Energy": 10,
+        "Multiplier": 0.72
+      },
+      {
+        "Energy": 0,
+        "Multiplier": 0.65
+      }
+    ],
+    "FatigueLogitScale": 0.35
+  },
+  "Pace": {
+    "Tunings": [
+      {
+        "Pace": "Slow",
+        "SetupActionMultiplier": 1.35,
+        "EnergyDrainMultiplier": 0.88
+      },
+      {
+        "Pace": "Normal",
+        "SetupActionMultiplier": 1,
+        "EnergyDrainMultiplier": 1
+      },
+      {
+        "Pace": "Fast",
+        "SetupActionMultiplier": 0.78,
+        "EnergyDrainMultiplier": 1.15
+      }
+    ]
+  },
+  "SelectionSpread": 0.6,
+  "MaxActionsPerMatch": 20000
+}

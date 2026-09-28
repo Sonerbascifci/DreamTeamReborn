@@ -296,3 +296,55 @@ testi yazıldı, koşturuldu ve silindi.
 **Sonuç:** 08 §119'un "summary mode" zorunluluğu bir optimizasyon değil,
 **dayanıklılık şartıdır** — tüm event'ler tutulursa ~21 GB. M6'nın ilk işi
 bellek sınırlı akış kipidir.
+## 15. M6 uygulama kararlari — 28 Eylül 2026
+
+Uygulama sirasinda alinan kararlar. Hepsi **motor kurali, arac yuzeyi veya
+olcum kuralidir**; urun karari degildir (D98a–D100 bolum 14'te).
+
+| ID | Karar | Durum | Gerekce |
+|---|---|---|---|
+| **D101** | **`ShortTimeoutsPerTeam = 5`** `RulesProfile.SimpleNbaInspired` icine yazildi | Uygulama — **D98a'nin uygulanmasi** | M5'te bilincli olarak kaynaksiz bir yer tutucuydu. Deger `ConfigHash`'e girdigi icin degisim `ConfigHash`'i degistirdi: `2a916d545deaa217` → **`91cbb2e60d78fd9a`**. |
+| **D102** | **T15 "acik/kapali" anahtari EKLENMEDI.** T15 "bu yuzeyin eklenmesi hicbir domain sonucunu degistirmedi" anlaminda denetleniyor | Uygulama karari — **plandan bilincli sapma** | Bir config anahtari eklemek o anahtari `ConfigHash`'e sokardı ve "ayni config" anlamini bozardi. Kanit dort bacaktan gelir: (a) M5 istenen simulator ciktisi 120 satirin **114'u bayt ayni**, 6 farkli satirin hepsi bilincli M6 bildirimi; (b) dort tohumun event parmak izi **M5 worktree'sinde** uretilen SHA-256 golden degerleriyle ayni; (c) 100 ve 250 adim sonrasi **RNG durumu** ayni; (d) sayaclar **bos degil** (05 §3 "etkisiz mekanizmayi gizleme" yasagi). |
+| **D103** | **Kalibrasyon kaynagi JSON belgedir, C# degil.** `config/engine/baseline.v0.1.json` dogrulanabilir girdi; motorun gomulu `EngineConfig.Baseline` **DEGISTIRILMEDI** | Uygulama karari | 08 §119 "her degisimde once/sonra config hash kaydedilir" diyor. C#'da olsaydi "once/sonra" bir commit olurdu. Motorun fabrika varsayilani M2–M5'in golden testlerine bagli; degistirmek onlari gecersiz kılardi. Iki degerin nerede kullanildigi `M6TestData.Config()` ve `FactoryConfig()` ile acikca yazili. |
+| **D104** | **KALIBRASYON HEDEFI 05 §7'nin KENDI araliklaridir** (AtRim %60-68, ClosePost %48-58, MidRange %38-45, ThreePoint %33-39) | Uygulama karari — **D98c ile uyumlu** | 05 §7 bu tabloyu acikca "NBA ortalamasi iddiası olmadan" verir. Yani hedef bizim belgemizdir, dis veri degil. Toplu 2P/3P ortalamasi bu araliklara denetlenemedigi icin **sut turu kirilimi** ayri sayac olarak eklendi (08 §6 "shot type dagilimi"). |
+| **D105** | **Sadece IKI parametre ailesi ayarlandi** (D98b): once `ShotModel`, sonra `ActionModel` | Uygulama — **D98b'ye uyum** | 08 §8 "ayni anda her seyi degistirme" diyor. Aile 1: `ThreePointBase` 0.36→0.323→0.293, `AtRimBase` 0.64→0.63. Aile 2: `ShotCompletionProbability` 0.65→0.85. Ikisi de belgenin `Notes` alaninda gerekcesiyle kayitli. |
+| **D106** | **`--away-tactics` / `--away-pace` bayraklari eklendi** | Uygulama karari | 08 §5'in savunma matrisi (4 hucum x 4 savunma) iki tarafi ayri ayri kurmayi gerektirir. Tek taraflı `--tactics` ile "hangi eslesme kazaniyor" sorusu sorulamazdi. |
+| **D107** | **`--tactics` artik `batch` komutunda da gecerli.** Tek bir `SetupFactory` her iki komutun da yoludur | Uygulama karari — **gercek hata duzeltmesi** | Oneri sadece `single` komutunda uygulaniyordu; `batch` dogrudan `source.Build` cagirip bayragi **sessizce yok sayiyordu**. 1.500 maclik uc farkli taktigin raporlari bayt bayt ayni cikti; savunma matrisi hic olculemedi. Tek mac raporunda taktik degismis gorundugu icin hata ancak iki komut karsilastirilirken yakalandi. |
+| **D108** | **`ShotTypeTally.Empty` artik deger uretir**, paylasilan singleton degildir | Uygulama karari — **gercek hata duzeltmesi** | Sayaclar `ref` ile mutasyona ugradigi icin iki yerel degisken ayni nesneyi gosteriyor, ev ve depo toplamlari tek yere karisiyor ve `Empty` surec boyunca birikiyordu. **2.000 macta oranlar yakinsadigi icin hata GORUNMEDI**; 10.000 macta ClosePost **%-67**, MidRange **%+70** gibi imkansiz degerler verdi. |
+
+### M6 uygulama sirasinda OLCULEN buyuk degerler
+
+| Olcum | Deger |
+|---|---|
+| 10K ayar kosusu (seed-start 1) | 26.8 sn, 373 mac/sn, ev kazanma %49.91 |
+| **100K holdout kosusu (sirali)** | **162.2 sn, 616 mac/sn, azami bellek 48.9 MB** |
+| **100K holdout kosusu (jobs=4)** | **82.6 sn, 1.210 mac/sn, azami bellek 282.7 MB** |
+| **T17 kaniti** | Sirali ve paralel 100K ciktisi: **farkli 6 satir**, hepsi manifestin calisma kaydi (yol, is parcacigi, sure, bellek, hiz). 2.000+ metrik satiri bayt bayt ayni. |
+| 100K berraklik | Bitmedigi icin hiz kazanci 1.96x (4 is parcaciginda). Tamamlanmamis paralellik kaybi normaldir. |
+| Ortalama skor | Ev 128.73 / Dep 128.75 |
+| Takim basina possession / Pace48 | 122.8 / **122.5** |
+| Sut turu oranlari (100K) | AtRim %67.57, ClosePost %54.80, MidRange %43.57, ThreePoint %36.31 — ** dortu de 05 §7 araliginda** |
+| ORtg | 104.83 |
+| TOV/poss / FAUL/poss / OREB% | 0.147 / 0.105 / 0.260 |
+| Aborted (100K) | **7 mac (%0.007)** — hepsi D79 uzatma tavani, sebebi raporda acikca yazili |
+| Uzatma orani | %2.21 |
+| Ev kazanma | %49.80, %95 CI [%49.49, %50.11] — 0.5'i **icermiyor**, simetri esigi GECTI |
+
+### M6'da BULUNAN 8 gercek hata
+
+| # | Hata | Belirti | Duzeltme | Regresyon testi |
+|---|---|---|---|---|
+| 1 | Fixture rating profili duzlestirildi | Argümansız koşu 112-118/5 periyottan **102-110/4 periyota** düştü; M2–M5 golden sonuçları geçersizleşti | M2'nin per-attribute ofsetleri birebir geri kondu | `TheDefaultMatchIsTheRecordedCalibratedMatch` |
+| 2 | **`ActionsWithoutShot` sayacı iki yolda artmiyordu** | `ActionsRun != ShotsAttempted + ActionsWithoutShot` — hücre saati tükenen erken dönüş yolu ve suta dönüşürken faul çözülen yol | Yapısal: `_shotAttemptedThisAction` bayrağı; yeni bir çıkış yolu kimliği bozamaz | `AnActionEitherAttemptsAShotOrIsCountedAsNotDoingSo` |
+| 3 | **CLI, değersiz bayrak için değer istiyordu** | `--parallel`, `--summary-only`, `--events` kullanılamaz; `--summary-only` bir sonraki bayrağı yutuyordu | Değersiz bayraklar döngünün başında ele alınıyor | `TheContractFromTheRoadmapParses`, `ParallelImpliesAtLeastTwoJobs` |
+| 4 | **`\|\|` kısa devre: savunma taktiği hiç tanınmıyordu** | `--tactics Drop` "geçersiz" hatası veriyordu | İki `TryParse` ayrı deniyor | `TacticOverrideAcceptsAnOffenseOrADefenseName` |
+| 5 | **Fixture dosyası yolu, dosyanın içindeki adla eşleşmiyordu** | `--fixture ./x.json` → "dosyada şu ad yok" | Kaynak, dosyanın `Name` alanıyla anahtarlanıyor | `AJsonFixturePathIsAccepted` |
+| 6 | **`export-fixtures` bayrakları ayrıştırmıyordu** | `--output` yok sayılıyordu, dosyalar yanlış yere yazılıyordu | Fiş ayrıştırma döngüsüne girdi | `ExportFixturesWritesOneFilePerFixture` |
+| 7 | **`DerivedMatchId` geçersiz GUID üretiyordu** | 27 ondalık karakter → `FormatException`; fixture dosyası hiç yüklenemiyordu | 32 karakter (8+8+16) | `EveryCatalogFixtureRoundTripsThroughItsFile` |
+| 8 | **`--tactics` toplu koşuda sessizce yok sayılıyordu** | Üç farklı taktigin 1.500 maclik raporu bayt bayt ayni; savunma matrisi ölçülemiyordu | Tek `SetupFactory` her iki komutun yolu | `ABatchRunAppliesTheSameTacticOverrideAsASingleRun`, `DifferentTacticsProduceDifferentBatchResults` |
+
+Ek olarak **rapor tarafında iki hesap hatası** bulundu ve düzeltildi: `Pace48`
+iki takımın possession'ını toplayıp **iki katına** çıkarıyordu (211.9 →
+**122.5**), ve `Skor StdSap` **sabit 0** yazıyordu — ölçülmemiş bir değeri
+ölçülmüş gibi göstermek. Artık margin toplamı ve toplam karelerinden gerçekten
+hesaplanıyor (100K'da **18.00**).

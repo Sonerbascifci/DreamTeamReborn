@@ -152,6 +152,7 @@ public sealed class MatchSimulation
             TotalActionCount = 0,
             PossessionCount = 0,
             Random = new SeededRandom(setup.Seed),
+            Diagnostics = Diagnostics.DiagnosticCounters.Empty,
         };
     }
 
@@ -273,6 +274,11 @@ public sealed class MatchSimulation
 
         step.ExpireStaleCommands();
         step.ExpandOnTerminal();
+
+        // M6 (D100): bu adimin sayaclari EN SONDA tek seferde state'e yazilir.
+        // Buraya kadar hicbir sayac okunmaz; bu yuzden diagnostics domain sonucunu
+        // degistiremez (T15). Adim basina tek immutable kayit yeterlidir.
+        step.FlushDiagnostics();
 
         return StepResult.NonTerminal(step.State, [.. step.Events], [.. step.CommandResults]);
     }
@@ -459,6 +465,7 @@ public sealed class MatchSimulation
             PlayerBoxScores = [],
             Events = events is null ? [] : [.. events],
             AbortReason = reason,
+            Diagnostics = Diagnostics.DiagnosticCounters.Empty,
         };
 
     private static MatchResult Project(
@@ -512,6 +519,9 @@ public sealed class MatchSimulation
             Events = [.. events],
             PlayerEnergy = completed ? BuildEnergyReport(state) : [],
             AbortReason = abortReason,
+
+            // M6 (D100): rapor yuzeyi. Motor bu degeri HICBIR YERDE okumaz.
+            Diagnostics = state.Diagnostics,
         };
     }
 
@@ -630,7 +640,37 @@ public sealed class MatchSimulation
         /// </summary>
         public List<CommandResult> CommandResults { get; } = [];
 
+        /// <summary>
+        /// M6 (D100): bu adımın kural sayaçları. <b>Yalnız yazılır.</b>
+        /// <c>Advance</c> sonunda <see cref="FlushDiagnostics"/> tek bir immutable
+        /// kayda çevirip state'e yazar.
+        ///
+        /// <para>Adı bilerek <c>Tally</c>: bir <c>Diagnostics</c> özelliği
+        /// <c>DreamTeam.MatchEngine.Diagnostics</c> ad alanını gölgeler ve
+        /// <c>Diagnostics.DiagnosticCounters.Empty</c> gibi ifadeler derlenmez.</para>
+        /// </summary>
+        public Diagnostics.DiagnosticTally Tally { get; } = new();
+
         public MatchState State => _state;
+
+        /// <summary>
+        /// M6 (D100): adım sayaclarını duruma yazar. <b>Adım bittikten SONRA</b>
+        /// çağrılır; karar hiçbir noktada bu değerleri okumaz.
+        /// </summary>
+        public void FlushDiagnostics()
+        {
+            var delta = Tally.ToCounters();
+
+            if (delta == Diagnostics.DiagnosticCounters.Empty)
+            {
+                return;
+            }
+
+            _state = _state with
+            {
+                Diagnostics = Diagnostics.DiagnosticCounters.Merge(_state.Diagnostics, delta),
+            };
+        }
 
         // ------------------------------------------------- M5: komut yonetimi
 
@@ -699,6 +739,7 @@ public sealed class MatchSimulation
                 }
 
                 accepted.Add(candidate);
+                Tally.CommandsAccepted += 1;
             }
 
             if (accepted.Count == 0)
@@ -767,6 +808,13 @@ public sealed class MatchSimulation
         /// </summary>
         public void ApplyAtBoundary(CommandBoundary boundary, bool isDeadBallWindow)
         {
+            // M6 (D100): pencere ACIKLANDI. Komut gelmese de sayilir; 06 §7
+            // pencere sayimi komut gonderiminden bagimsizdir.
+            if (isDeadBallWindow)
+            {
+                Tally.DeadBallWindows += 1;
+            }
+
             if (_state.CommandQueue.PendingCount == 0)
             {
                 return;
@@ -934,6 +982,17 @@ public sealed class MatchSimulation
 
         private void PublishCommandResultEvent(CommandResult result)
         {
+            // M6 (D100): her komut sonucu TEK bir noktadan gecer; sayac burada
+            // guvenilir sekilde tam sayilir.
+            if (result.Applied)
+            {
+                Tally.CommandsApplied += 1;
+            }
+            else
+            {
+                Tally.CommandsRejected += 1;
+            }
+
             Emit(
                 result.Applied ? MatchEventType.CommandApplied : MatchEventType.CommandRejected,
                 result.Applied
@@ -961,6 +1020,15 @@ public sealed class MatchSimulation
             var period = _state.Clock.Period + 1;
             var isFirstPeriod = period == 1;
             var rules = _engine._config.Rules;
+
+            // M6 (D100): periyot ve uzatma sayaci. Uzatma, duzenleme periyodu
+            // sayisindan fazla olan periyottur (06 §8).
+            Tally.PeriodsStarted += 1;
+
+            if (PeriodController.IsOvertime(rules, period))
+            {
+                Tally.OvertimePeriodsStarted += 1;
+            }
 
             var clock = _state.Clock.BeginPeriod(
                 period,
@@ -1106,7 +1174,33 @@ public sealed class MatchSimulation
 
         // ----------------------------------------------------------------- aksiyon
 
+        /// <summary>
+        /// M6 (D100): bu aksiyon bir <c>ShotAttempt</c> yayinladi mi?
+        ///
+        /// <para><b>Neden bayrak?</b> Ilk tasarimda
+        /// <c>ActionsWithoutShot</c> her "suta donusmedi" dalinda ayri ayri
+        /// artiriliyordu. Bu <b>yanlis</b>ydi ve test yakaladi: hucre saati
+        /// tukenince erken donen yol ile suta donusurken hucre faulu cozulen
+        /// yol hic artirmiyordu, oysa ikisi de sut denemiyordu. Sonuc:
+        /// <c>ActionsRun != ShotsAttempted + ActionsWithoutShot</c>.</para>
+        ///
+        /// <para>Bayrak yapilir: kimlik <b>yapisal</b> olarak dogru olur ve
+        /// ileride eklenen bir cikis yolu onu bozamaz.</para>
+        /// </summary>
+        private bool _shotAttemptedThisAction;
+
         public void RunAction()
+        {
+            _shotAttemptedThisAction = false;
+            RunActionCore();
+
+            if (!_shotAttemptedThisAction)
+            {
+                Tally.ActionsWithoutShot += 1;
+            }
+        }
+
+        private void RunActionCore()
         {
             if (_state.TotalActionCount >= _engine._config.MaxActionsPerMatch)
             {
@@ -1118,6 +1212,11 @@ public sealed class MatchSimulation
 
             var offense = _state.Possession?.Offense
                 ?? throw new InvalidOperationException("Aksiyon yok: possession yok.");
+
+            // M6 (D100): aksiyon sayaci. Suta donusmeyen her yol ayrica
+            // `ActionsWithoutShot` artirir; boylece "kac aksiyon sut denedi"
+            // raporlanabilir olur (08 §6 shot type dagilimi).
+            Tally.ActionsRun += 1;
 
             // M5 (D86, 07 §6 madde 1): taktik ve tempo BIR SONRAKI AKSIYON KARAR
             // SINIRINDA uygulanir. Cozulmeye baslamis bir sutu geriye donuk
@@ -1159,7 +1258,6 @@ public sealed class MatchSimulation
                 _state.Random);
 
             var setupMs = SetupActionMilliseconds(offense);
-
             if (turnover.IsTurnover)
             {
                 ConsumeLive(offense, setupMs);
@@ -1362,6 +1460,9 @@ public sealed class MatchSimulation
                 playerId: selection.PlayerId,
                 secondaryPlayerId: null);
 
+            Tally.ShotsAttempted += 1;
+            _shotAttemptedThisAction = true;
+
             if (shooterFoulId != 0)
             {
                 ApplyFoul(offense, foulId, primaryDefender, foulType, 0, selection.PlayerId, actionId);
@@ -1377,6 +1478,13 @@ public sealed class MatchSimulation
 
             // 9) cember teması (06 §6 reset tablosu)
             var rimContact = _engine._rimContactResolver.TouchedRim(_state.Random);
+
+            // M6 (D100): motor ici bir olay; event degildir. Hucrem saati
+            // politikasini besler ve M6 raporunda ayrica gorunur.
+            if (rimContact)
+            {
+                Tally.RimContacts += 1;
+            }
 
             // Ucus suresi canli oyun suresidir.
             ConsumeLive(offense, _engine._config.Actions.ShotFlightMs);
@@ -1449,6 +1557,8 @@ public sealed class MatchSimulation
 
             if (isBlocked)
             {
+                Tally.ShotsBlocked += 1;
+
                 Emit(
                     MatchEventType.Block,
                     new BlockPayload(pending.ShotId, blockerId!.Value),
@@ -1462,6 +1572,8 @@ public sealed class MatchSimulation
             if (isMade)
             {
                 var points = ShotResolver.PointsFor(pending.ShotType);
+
+                Tally.ShotsMade += 1;
 
                 Emit(
                     MatchEventType.ShotMade,
@@ -1480,6 +1592,8 @@ public sealed class MatchSimulation
             }
             else
             {
+                Tally.ShotsMissed += 1;
+
                 Emit(
                     MatchEventType.ShotMissed,
                     new ShotMissedPayload(pending.ShotId, pending.ShotType, countsAsFieldGoalAttempt),
@@ -1591,8 +1705,12 @@ public sealed class MatchSimulation
                 playerId: series.ShooterId,
                 secondaryPlayerId: null);
 
+            Tally.FreeThrowsAttempted += 1;
+
             if (isMade)
             {
+                Tally.FreeThrowsMade += 1;
+
                 Emit(
                     MatchEventType.FreeThrowMade,
                     new FreeThrowMadePayload(series.FTSeriesId, series.Index, series.Count),
@@ -1775,6 +1893,21 @@ public sealed class MatchSimulation
         {
             _state = _state with { NextFoulId = foulId + 1 };
 
+            // M6 (D100): faul turu sayaci. Bonus ve free throw dagilimi
+            // kalibrasyonda ayri ayri raporlanir.
+            if (type == FoulType.Offensive)
+            {
+                Tally.FoulsOffensive += 1;
+            }
+            else if (type == FoulType.Shooting)
+            {
+                Tally.FoulsShooting += 1;
+            }
+            else
+            {
+                Tally.FoulsNonShooting += 1;
+            }
+
             // Faul, ait oldugu aksiyonla ayni sinirda yayinlanir; boylece tuketici
             // bir faulu ilgili suta (ShotAttempt) actionId uzerinden baglayabilir.
             // 07 §2 bunu ayrica istemiyor ama korelasyon olmadan payload'daki
@@ -1811,6 +1944,8 @@ public sealed class MatchSimulation
 
             var marked = _state.Team(foulingSide).MarkFoulOut(foulerId);
             _state = ReplaceTeam(foulingSide, marked);
+
+            Tally.FoulOuts += 1;
 
             // Foul-out oyuncuyu sahadan cikarir ve yedekleme zorunludur (D41).
             if (_state.Team(foulingSide).OnCourt.Any(player => player.Id == foulerId))
@@ -1850,6 +1985,8 @@ public sealed class MatchSimulation
         private void StartPossession(TeamSide offense)
         {
             var possessionId = _state.PossessionCount + 1;
+
+            Tally.PossessionsStarted += 1;
 
             // 06 §6: yeni hucremus 24 saniyelik hucre saatiyle baslar. OREB bu
             // sifirlamayi YAPMAZ; hucrem kimligi korunur ve kalan sure devreder.
@@ -2106,6 +2243,21 @@ public sealed class MatchSimulation
             var turnoverId = _state.NextTurnoverId;
 
             _state = _state with { NextTurnoverId = turnoverId + 1 };
+
+            // M6 (D100): turnover nedeni ayri ayri sayilir. 08 §6 top kaybi
+            // orani kalibrasyonda bu ayrimi kullaniyor.
+            if (kind == TurnoverKind.LostBall)
+            {
+                Tally.TurnoversLostBall += 1;
+            }
+            else if (kind == TurnoverKind.OffensiveFoul)
+            {
+                Tally.TurnoversOffensiveFoul += 1;
+            }
+            else
+            {
+                Tally.TurnoversShotClockViolation += 1;
+            }
 
             Emit(
                 MatchEventType.Turnover,

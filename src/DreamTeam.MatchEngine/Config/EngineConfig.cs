@@ -169,12 +169,14 @@ public sealed record RulesProfile
     public required int FullTimeoutsInFinalTwoMinutes { get; init; }
 
     /// <summary>
-    /// M5 (D83, D89): takim basina 20 saniyelik timeout butcesi.
+    /// M5 (D83), D98a (M6): takim basina 20 saniyelik timeout butcesi.
     ///
-    /// <para><b>KAYNAKTAN GELMIYOR.</b> D83 yalniz timeoutun <i>tipini</i>
-    /// tanimladi, sayiyi degil. NBA'da bu sayi 5'tir ama o degeri kopyalamak
-    /// kaynaksiz bir tercih olurdu. Yer tutucu; <c>ConfigHash</c>'e girdigi icin
-    /// tek satir degiserek duzeltilebilir. Kullanici onayi bekliyor.</para>
+    /// <para><b>M6'da KAYNAKLANDI.</b> M5'te bu deger bilincli olarak kaynaksiz
+    /// bir yer tutucuydu ve D89 olarak acik isaretlendi; 3 bir uydurmak olurdu.
+    /// Kullanici 28 Eylul 2026'da <b>5'i</b> secti ve bu bir kural degil,
+    /// NBA gerceginin bir degeridir. 06 &#167;23'teki "sayilar ozel oyun
+    /// basitlestirmesidir" uyarisi bu sayiyi yalnizca <i>tam timeout</i> icin
+    /// gecerlidir.</para>
     /// </summary>
     public required int ShortTimeoutsPerTeam { get; init; }
 
@@ -208,7 +210,7 @@ public sealed record RulesProfile
         MaxOvertimePeriods = 2,
         FullTimeoutsPerTeam = 4,
         FullTimeoutsInFinalTwoMinutes = 2,
-        ShortTimeoutsPerTeam = 3,
+        ShortTimeoutsPerTeam = 5,
         OvertimeTimeoutBonus = 1,
     };
 }

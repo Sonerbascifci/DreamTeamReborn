@@ -278,8 +278,11 @@ public class ApplicationBoundaryTests
         var full = M2TestData.Config(
             rules: baseline.Rules with { FullTimeoutsPerTeam = 7 });
 
+        // D98a sonrasi motor varsayilani 5. Testin amaci "bu alan hash'e giriyor"
+        // demek; varsayilandan FARKLI bir deger kullanmak zorunlu, aksi halde
+        // test sessizce anlamini yitirir.
         var shortBudget = M2TestData.Config(
-            rules: baseline.Rules with { ShortTimeoutsPerTeam = 5 });
+            rules: baseline.Rules with { ShortTimeoutsPerTeam = 9 });
 
         Assert.NotEqual(baseline.ComputeConfigHash(), full.ComputeConfigHash());
         Assert.NotEqual(baseline.ComputeConfigHash(), shortBudget.ComputeConfigHash());

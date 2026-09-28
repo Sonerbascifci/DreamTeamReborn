@@ -63,6 +63,14 @@ public sealed record MatchSnapshotData
 
     public required int PossessionCount { get; init; }
 
+    /// <summary>
+    /// M6 (D100): diagnostics sayaclari serilestirilir. Snapshot diagnostics'i
+    /// tasimazsa ortada alinan bir snapshot sayaclari sifirlar ve M6 raporu
+    /// eksik kalir. They do not change any outcome, so carrying them costs
+    /// nothing and losing them would be a silent gap.
+    /// </summary>
+    public required Diagnostics.DiagnosticCounters Diagnostics { get; init; }
+
     public static MatchSnapshotData From(MatchState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -88,6 +96,7 @@ public sealed record MatchSnapshotData
             NextFTSeriesId = state.NextFTSeriesId,
             TotalActionCount = state.TotalActionCount,
             PossessionCount = state.PossessionCount,
+            Diagnostics = state.Diagnostics,
         };
     }
 
@@ -124,6 +133,7 @@ public sealed record MatchSnapshotData
             TotalActionCount = TotalActionCount,
             PossessionCount = PossessionCount,
             Random = random,
+            Diagnostics = Diagnostics,
         };
     }
 }

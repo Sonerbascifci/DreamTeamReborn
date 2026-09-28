@@ -80,6 +80,14 @@ public sealed record MatchState
     /// <summary>Devam için RNG state'i. Seed değil, mevcut durumdur (05 §14).</summary>
     public required IRandomSource Random { get; init; }
 
+    /// <summary>
+    /// M6 (D100, T15): kural sayaçları. <b>RNG tüketmez, ConfigHash'e girmez ve
+    /// hiçbir domain kararı okumaz</b> — yalnız raporlanır. Bu yüzden snapshot'a
+    /// da yazılır; yoksa bir maç ortasında alınan snapshot diagnostics'i
+    /// sessizce sıfırlardı.
+    /// </summary>
+    public required Diagnostics.DiagnosticCounters Diagnostics { get; init; }
+
     public TeamMatchState Team(TeamSide side) => side == TeamSide.Home ? Home : Away;
 
     public int Score(TeamSide side) => side == TeamSide.Home ? HomeScore : AwayScore;
