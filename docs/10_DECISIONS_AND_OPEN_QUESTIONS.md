@@ -72,13 +72,14 @@ Tarih: 27 Eylül 2026 güncellemesiyle. “Yön” tasarım yaklaşımıdır; ku
 | Q09 | Energy sıfır endpoint'i, drain/recovery ve FT etkisi? | Her biri config ve testle tanımlanır | M4 | **Çözüldü → D58, D62** |
 | Q10 | GameForm dağılımı ve birimi? | Başta kapalı; sonra bounded model | M4/M6 | **Kısmen çözüldü → D60 (M4'te kapalı). M6 kapsamı dışında bırakıldı (D98b); dağılım/birim hâlâ açık** |
 | Q11 | Timeout hakkı, legal pencereler, late game? | 06/07 taslağı üzerinden netleştir | M5 | **Çözüldü → D80, D81, D84.** Clutch yok; motor yönetir; 4 tam timeout, son 2'si son 2 dakikada, uzatma +1. **Sapma:** timeout canlı topta uygulanmaz |
-| Q12 | Canlı maç kaç gerçek dakika sürmeli? | Simülasyon hızından bağımsız ürün ayarı | M7 | Açık |
-| Q13 | PostgreSQL/MSSQL, auth ve hosting? | Ekip/ortam ve gerçek gereksinimle seç | M7 | Açık — M1'i engellemedi |
-| Q14 | Oyuncu kopyası/instance ve kadro büyüklüğü? | Engine fixture'ından ürün kuralı çıkarma | M7 | Açık — M1'i engellemedi |
+| Q12 | Canlı maç kaç gerçek dakika sürmeli? | Simülasyon hızından bağımsız ürün ayarı | M7 | **Çözüldü → D109** (8 gerçek dakika) |
+| Q13 | PostgreSQL/MSSQL, auth ve hosting? | Ekip/ortam ve gerçek gereksinimle seç | M7 | **Çözüldü → D110** (PostgreSQL + JWT bearer) |
+| Q14 | Oyuncu kopyası/instance ve kadro büyüklüğü? | Engine fixture'ından ürün kuralı çıkarma | M7 | **Çözüldü → D111** (kişi başına oyuncu, kadro serbest) |
 | Q15 | Başlangıç bütçesi, ödül, scout, salary cap? | Basit AI loop, ücretler ayrı karar | M10 | Açık |
-| Q16 | PvP MVP şartı mı? | Önce AI rakip; PvP ayrı milestone | M7 öncesi ürün kapsamı | Açık |
+| Q16 | PvP MVP şartı mı? | Önce AI rakip; PvP ayrı milestone | M7 öncesi ürün kapsamı | **Çözüldü → D112** (M7'de PvP yok) |
 | Q17 | Gerçek veri, günlük update ve ekonomi algoritması? | Fictional başlangıç; provider adapter sonra | M11+ | Açık |
 | Q18 | Sezon referansı ve sayısal release eşikleri? | Veri seti seç + fixture koşulları + holdout | M6 | **Çözüldü → D98c.** Gerçek veri referansı **yok**; eşikler **iç tutarlılıktan** türetilir (mirror simetri, uç değer güvenliği, dominant strateji yokluğu, kalite farkı yönü, tempo sırası, home/away yer değiştirme). NBA sezonuyla karşılaştırma raporda **bulunmaz** |
+| Q19 | API yetkilendirme modeli, reconnect ve restart/abort politikası? | JWT + sunucu tarafı sahiplik; canlı maç; restart sonrası politika açık | M7 | **Çözüldü → D110, D113** |
 
 Q04–Q18'in çoğu M1 için bekleme sebebi değildir. Codex her soruyu bir kerede kullanıcıya yöneltmek yerine aktif milestone'ı etkileyenleri ayırmalı.
 
@@ -243,8 +244,8 @@ kararlar. **Kod yazılmadı**; `docs/plans/M5_IMPLEMENTATION_PLAN.md` yazıldı.
 ### Hâlâ açık
 
 - **Q10** — GameForm dağılımı/birimi (M6 kapsamı dışında bırakıldı, D98b).
-- **Q12** — canlı maç kaç gerçek dakika sürmeli (M7).
-- **Q13–Q17, Q19** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri.
+- **Q12 → D109** (8 gerçek dakika). **Q13 → D110**, **Q14 → D111**, **Q16 → D112**, **Q19 → D110/D113** hepsi kapandı.
+- Kalan: **Q15** (bütçe/ödül/scout/salary cap — M10), **Q17** (gerçek veri ve ekonomi — M11+).
 
 ## 13. M5 uygulama kararları — 28 Eylül 2026
 
@@ -269,8 +270,8 @@ Motor tarafında alınan kararlar. Hepsi motor kuralıdır; ürün kararı deği
 
 - **D87** — `ImmutableArray<T>` içeren `record`'larda bozuk değer eşitliğinin **M7'de** çözülmesi.
 - **Q10** — GameForm dağılımı/birimi (M6 kapsamı dışında bırakıldı, D98b).
-- **Q12** — canlı maç süresi (M7).
-- **Q13–Q17, Q19** — DB/auth, oyuncu örneği, kadro büyüklüğü, transfer/draft, PvP MVP, gerçek veri.
+- **Q12 → D109** (8 gerçek dakika). **Q13 → D110**, **Q14 → D111**, **Q16 → D112**, **Q19 → D110/D113** hepsi kapandı.
+- Kalan: **Q15** (bütçe/ödül/scout/salary cap — M10), **Q17** (gerçek veri ve ekonomi — M11+).
 
 ## 14. M6 planlama kararları — 28 Eylül 2026
 
@@ -348,3 +349,62 @@ iki takımın possession'ını toplayıp **iki katına** çıkarıyordu (211.9 �
 **122.5**), ve `Skor StdSap` **sabit 0** yazıyordu — ölçülmemiş bir değeri
 ölçülmüş gibi göstermek. Artık margin toplamı ve toplam karelerinden gerçekten
 hesaplanıyor (100K'da **18.00**).
+## 16. M7 planlama kararları — 28 Eylül 2026
+
+Beş ürün kararı kullanıcıya soruldu, beşi de cevaplandı. Bunların **tamamı ürün
+kararıdır**; teknik zorunluluk değildir. Q16 ilk soruda cevapsız kaldı ve
+ayrıca soruldu.
+
+| ID | Karar | Durum | Gerekçe |
+|---|---|---|---|
+| **D109** | **Canlı maç 8 gerçek dakika.** Simüle 48 dakika → hız çarpanı **6.0** | Kullanıcı kararı | 03 "canlı modda ilerleme sınırları gerekir" diyor. 8 dakika, 20 saniyelik timeout'un duvar saati karşılığını ölçülebilir bir değere oturtur ve komut pencerelerini kullanılabilir bırakır. 4 dakika pencereleri çok dar, 12 dakika izlemesi kolay yönetmesi sıkıcı. |
+| **D110** | **PostgreSQL + JWT bearer.** Motor ve Domain **sıfır paketle kalır** | Kullanıcı kararı | 09 bunu M7'nin ön koşulu koyuyordu. **Sınır önemli:** paket bağımlılığı yalnız yeni `Infrastructure` ve `Api` projelerindedir; `Application` de sıfır paketle kalır. |
+| **D111** | **Oyuncu kişi başına kopya, kadro boyutu serbest** | Kullanıcı kararı | 04'ün kalıcı modeli bunu zaten ima ediyor (`Team` + `RosterEntry` + `Player`). **Sınır:** lineup **5 oyuncu** kalır — bu bir motor kuralıdır (D31), ürün kuralı değil. M6'daki 10 kişilik kadro bir **ölçüm aracıdır**, ürün kuralı değildir (08: "engine fixture'ından ürün kuralı çıkarma"). |
+| **D112** | **M7'de PvP YOK, sadece AI** | Kullanıcı kararı | 09'un M7 minimum use case'i "AI maç başlatma" diyor. **Eşzamanlılık altyapısı yine kurulur** — T19 ve "aynı maç iki runner'dan ilerletilmez" kabulü iki bağlantı istiyor. Rakip bulma ve çift taraf sahipliği ayrı iş. |
+| **D113** | **Sunucu çökerse maç `Aborted`, kurtarma YOK.** Sebep yazılır, ödül verilmez | Kullanıcı kararı | 09 "restart/abort policy **açık**" diyor — açık olması sürme zorunluluğu değil. 03 kurtarma politikasının sahibini "M7/M11 tasarımı" bırakıyor; kullanıcı kurtarma istemedi. Kurtarma, D87'nin kalıcı çözümünü de gerektirirdi; iki belirsizliği tek milestone'a yığmak yerine ikisi de kayda geçirildi. |
+| **D114** | **Q19 soru tablosuna eklendi** | Düzeltme | M6 oturumunda iki "hâlâ açık" listesine Q19 atfı yapılmış ama tabloda **hiç yoktu**. Bu bir belge tutarsızlığıydı; aynı oturumda kapatıldı. |
+
+### M7 planlama sırasında ÖLÇÜLEN ortam gerçeği
+
+Bu bölüm planın en değerli kısmı: **bu ortamda paket indirilemiyor.**
+
+| Ölçüm | Sonuç | Sonuç için ne yapmalı |
+|---|---|---|
+| `nuget.org` erişimi | **YOK** — `NU1101` | Paket sürümleri **zorla** seçilmeli |
+| Yerel NuGet önbelleği | **883 paket** | Gerekli her şey var |
+| Planlanan paket setiyle restore | **BAŞARILI** (çevrimdışı) | Sürümler sabitlenebilir |
+| `Microsoft.Extensions.Hosting` açık referansı | `NU1510` uyarısı | Referans **verilmeyecek** |
+| PostgreSQL 18 kurulu | **Evet** | Entegrasyon testi gerçek DB'ye gider |
+| `localhost:5432` | **Dinliyor** | Testler çalışma anında bağlanabilir |
+| `Testcontainers.PostgreSQL` | **Yok** | Kullanılamaz; yerel PostgreSQL |
+
+Ölçülen ve kullanılacak sürümler: `Npgsql 10.0.2`,
+`Microsoft.AspNetCore.Authentication.JwtBearer 10.0.9`,
+`System.IdentityModel.Tokens.Jwt 8.22.0`, `Dapper 2.1.79`,
+`Microsoft.AspNetCore.Mvc.Testing 10.0.10`, `Microsoft.AspNetCore.TestHost 10.0.10`.
+
+**Dapper, EF Core değil** (uygulama kararı): 03 generic repository'yi yasaklıyor,
+04 tekil kısıtların **şemada görünür** olmasını istiyor. Elle yazılmış SQL'de
+`UNIQUE (match_id, sequence)` gözle görülür. Bu bir **gerçek kısıttır**: şema
+elle yazılacak, migration aracı olmayacak.
+
+Geçici probe dosyaları (paket denemesi, NuGet erişim testi) yazıldı, koşturuldu
+ve **silindi**. Bu oturumda kaynak kodu değiştirilmedi.
+
+### M7'de bilinçli olarak yapılmayacaklar (özet)
+
+PvP (D112) · `web/` istemcisi (M8/M9) · ekonomi/ödül/scout/transfer (M10) ·
+`PlayerRatingHistory` (M11) · çoklu sunucu/lease/fencing (03) · Redis (03) ·
+maç kurtarma (D113) · `record.Equals` kalıcı düzeltmesi (D87 → M11) ·
+EF Core ve migration aracı · hız ayarı ve pause/resume (M8+).
+
+### Planlanan test sayısı ve en kritik test
+
+**Hedef 45–55 test.** En kritik olan:
+
+> **`ALiveMatchProducesTheSameEventsAsSimulate`** — aynı seed + aynı komut
+> listesi için duvar saati eşlemesiyle yürüyen canlı maç, `Simulate` ile **bayt
+> bayt aynı** event akışını üretmelidir.
+
+Bu, pacer'ın domain sonucunu değiştirmediğini **doğrudan** ölçer. Pacer yalnız
+`Advance` döndükten **sonra** bekler; motorun girdisini değiştirmez.

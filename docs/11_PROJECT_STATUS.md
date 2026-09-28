@@ -4,10 +4,10 @@ Son güncelleme: 28 Eylül 2026.
 
 ## Şu anda
 
-- Aşama: **Uygulama.** M6 **uygulandı, doğrulandı ve ölçüldü.**
-- Aktif milestone: **M6 bitti → sırada M7 (API, auth, persistence, canlı runner).**
-- Uygulama yetkisi: **M6 için verildi ve kullanıldı.** M7 için yetki **yok.**
-- Git: `main` == `origin/main` == `3ca3b1e` (M6 planlaması). Bu oturumun
+- Aşama: **Planlama.** M6 uygulandı ve ölçüldü; **M7 planı yazıldı, onay bekliyor.**
+- Aktif milestone: **M7 (API, auth, persistence, canlı runner, reconnect).**
+- Uygulama yetkisi: **M7 için YOK.** Kullanıcının ayrı bir "planı uygula" mesajı gerekiyor.
+- Git: `main` == `origin/main` == `bc21816` (M6 uygulaması). Bu oturumun
   değişiklikleri henüz commit edilmedi.
 - Monte Carlo: **10K ayar + 100K holdout GERÇEKTEN koşuldu.** Artık "0 maç"
   değil. Raporlar `reports/balance/` altında.
@@ -49,6 +49,52 @@ Son güncelleme: 28 Eylül 2026.
 **Not:** Bu oturumda `dotnet test -c Debug`, `dotnet list package`, yasaklı çağrı
 taraması ve `git diff` **koşturulmadı** — M6 kodu yazılmadığı için gerek yoktu.
 Son tam doğrulama M5 kapanışındadır (aşağıda).
+
+## Son oturumda (M7 planlaması) yapılanlar
+
+- **`docs/plans/M7_IMPLEMENTATION_PLAN.md` yazıldı** (542 satır, 16 bölüm).
+  **Kod yazılmadı; kaynak dosya değiştirilmedi.**
+- **Beş ürün kararı alındı** ve `docs/10` §16'ya kaydedildi:
+
+| ID | Karar |
+|---|---|
+| **D109** | Canlı maç **8 gerçek dakika** (hız çarpanı 6.0) — Q12 kapandı |
+| **D110** | **PostgreSQL + JWT bearer** — Q13 kapandı |
+| **D111** | **Kişi başına oyuncu kopyası, kadro serbest** (lineup 5 kalır) — Q14 kapandı |
+| **D112** | **M7'de PvP yok, sadece AI** — Q16 kapandı |
+| **D113** | **Sunucu çökerse maç `Aborted`, kurtarma yok** — Q19 kapandı |
+| **D114** | **Q19 soru tablosuna eklendi** — M6'da atıf yapılmış ama hiç yoktu |
+
+- **Q16 iki kez soruldu.** İlk toplu soruda cevapsız kaldı; uydurmak yerine
+  ayrı soruldu ve "M7'de PvP yok" cevabı alındı.
+
+### Bu oturumda GERÇEKTEN ölçülen şey (tahmin yok)
+
+| Ölçüm | Sonuç |
+|---|---|
+| `nuget.org` erişimi | **YOK** — `NU1101: paket bulunamıyor` |
+| Yerel NuGet önbelleği | **883 paket** — gerekli her şey var |
+| Planlanan paket setiyle `dotnet restore` | **BAŞARILI**, 331 ms, tamamen çevrimdışı |
+| `Microsoft.Extensions.Hosting` açık referansı | `NU1510` uyarısı → referans **verilmeyecek** |
+| PostgreSQL 18 kurulu mu | **Evet** — `C:\Program Files\PostgreSQL\18\bin` |
+| `localhost:5432` dinliyor mu | **Evet** |
+| `Testcontainers.PostgreSQL` | **Yok** → yerel PostgreSQL kullanılacak |
+| ASP.NET Core runtime | 10.0.12 mevcut |
+
+**Geçici probe dosyaları yazıldı, koşturuldu ve silindi.** Çalışma ağacında
+kalıntı yok.
+
+### Planın en kritik tasarım kararı
+
+Pacer "lag-behind" olacak: motor öndeyse **bekler**, gerideyse **beklemez**.
+Eğer sabit bekleme kullanılsaydı 8 dakikalık hedef aşılır ya da motoru
+yavaşlatmak gerekirdi — yavaşlatmak **domain sonucunu değiştirir**.
+
+Bunu doğrulayan test: **`ALiveMatchProducesTheSameEventsAsSimulate`** — aynı
+seed + aynı komutlarla canlı koşu, `Simulate` ile bayt bayt aynı event akışını
+üretmeli.
+
+## Önceki oturumda (M6 uygulaması) yapılanlar
 
 ## Son oturumda (M6 uygulaması) yapılanlar
 
@@ -394,7 +440,7 @@ henüz yok (M4). 10K/100K deneyi çalıştırılmadı; M6.
 
 ## Sonraki tek uygulanabilir görev
 
-**M7 planını yazmak** — kod yazmadan. Kapsam (03, 09 §M7):
+**M7 planını onaylamak ve uygulama yetkisi istemek.** Kapsam (03, 09 §M7):
 
 1. **D87'nin kalıcı çözümü.** `ImmutableArray<T>` içeren `record`'larda değer
    eşitliği bozuk; M6'da `FixtureTeamFile`'a da bulaştı. 03 §"Match completion
