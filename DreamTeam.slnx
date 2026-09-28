@@ -3,9 +3,14 @@
     <Project Path="src/DreamTeam.Domain/DreamTeam.Domain.csproj" />
     <Project Path="src/DreamTeam.MatchEngine/DreamTeam.MatchEngine.csproj" />
     <Project Path="src/DreamTeam.Simulator/DreamTeam.Simulator.csproj" />
+    <Project Path="src/DreamTeam.Application/DreamTeam.Application.csproj" />
+    <Project Path="src/DreamTeam.Infrastructure/DreamTeam.Infrastructure.csproj" />
+    <Project Path="src/DreamTeam.Api/DreamTeam.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DreamTeam.MatchEngine.Tests/DreamTeam.MatchEngine.Tests.csproj" />
     <Project Path="tests/DreamTeam.Simulator.Tests/DreamTeam.Simulator.Tests.csproj" />
+    <Project Path="tests/DreamTeam.Application.Tests/DreamTeam.Application.Tests.csproj" />
+    <Project Path="tests/DreamTeam.Api.Tests/DreamTeam.Api.Tests.csproj" />
   </Folder>
 </Solution>

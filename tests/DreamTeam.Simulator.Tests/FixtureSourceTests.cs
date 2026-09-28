@@ -2,7 +2,6 @@ using DreamTeam.MatchEngine.Config;
 using DreamTeam.Simulator.Batch;
 using DreamTeam.MatchEngine.Core;
 using DreamTeam.Simulator.Cli;
-using DreamTeam.Simulator.Config;
 using DreamTeam.Simulator.Fixture;
 
 namespace DreamTeam.Simulator.Tests;

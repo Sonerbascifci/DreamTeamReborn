@@ -1,0 +1,28 @@
+# =====================================================================
+# M7: veritabani baglanti dizesi ORNEGI.
+#
+# BU DOSYA BIR ORNEKTIR. GERCEK SIFRE BURAYA YAZILMAZ ve git'e
+# GIRMEZ. Kopyalayip kendi makinenizde duzenleyin; gercek degeri
+# ortam degiskenine tasimak SIZIN sorumlulugunuzdadir.
+#
+# ORTAM DEGISKENI ADI (Program.cs bunu okur):
+#   ConnectionStrings__Postgres
+#
+# PowerShell:
+#   $env:ConnectionStrings__Postgres = "Host=localhost;Database=dreamteam;Username=...;Password=..."
+#
+# ASPNETCORE Icin connection string'i appsettings.json'a da
+# yazabilirsiniz, ama o dosya repoda oldugu icin TUM SIFRELER
+# ortam degiskeninde kalmalidir.
+# =====================================================================
+
+Host=localhost
+Port=5432
+Database=dreamteam
+Username=dreamteam
+Password=DEGISTIRIN
+
+# Guvenli onlemler:
+#   * Password ASLA commit edilmez.
+#   * SSL Mode=Disable yalniz yerel gelistirmede.
+#   * Production'da SSL Mode=Require ve ayri bir kullanici.

@@ -408,3 +408,148 @@ EF Core ve migration aracı · hız ayarı ve pause/resume (M8+).
 
 Bu, pacer'ın domain sonucunu değiştirmediğini **doğrudan** ölçer. Pacer yalnız
 `Advance` döndükten **sonra** bekler; motorun girdisini değiştirmez.
+
+## 17. M7 uygulama (2026-09-28)
+
+M7 planı (`docs/plans/M7_IMPLEMENTATION_PLAN.md`) uygulandı. Bu bölüm
+**ölçülen** sonucu ve kararları kayda geçirir; tahmin içermez.
+
+### D115 — Denge belgesinin okuyucusu motora taşındı
+
+**Karar.** `BalanceConfigStore` ve `BalanceConfigDocument`
+`src/DreamTeam.Simulator/Config/` altından `src/DreamTeam.MatchEngine/Config/`
+altına **taşındı**.
+
+**Neden.** M6'da denge belgesini yalnızca CLI okuyordu. M7'de sunucu da aynı
+belgeyi okumalı. İki seçenek vardı:
+
+1. `Infrastructure` → `Simulator` proje referansı. 03'ün bağımlılık
+   grafiğini ters çevirir (Simulator bir CLI; sunucu bir kütüphane değil).
+2. İkinci bir JSON okuyucu yazmak. D103'ün tam olarak yasakladığı şey budur:
+   "hangi config ile üretildi" sorusu cevapsız kalır.
+
+Kabul edilen yol 2 değil, 1'in de reddedildiği hali: okuyucu motorun
+`Config` katmanına taşındı. `System.Text.Json` BCL'de olduğu için motor
+**yine sıfır paket** kaldı (M5 D88). Sonuç: **tek okuyucu, doğru yön.**
+
+**Yan etki.** `FixtureCatalog.RulesVersion` tek kaynağa bağlandı; kural
+sürümü artık `RulesIdentity.Current` (yeni dosya). `EngineIdentity`'ye
+özellik **eklenmedi** — o dosya M6'da dondurulmuştu.
+
+### D116 — Kimlikler girdiden türetilir (`Guid.NewGuid` yasak)
+
+Oyuncu, takım ve maç kimlikleri SHA-256 girdi'den üretilir
+(`DerivedId.From`). `Guid.NewGuid` bu üç yerde kullanılmaz.
+
+**Neden.** Üç somut neden: tekrar üretilebilirlik (aynı girdi aynı macı
+kurar), idempotency (aynı istek iki kez gelirse iki satır oluşmaz) ve
+izlenebilirlik. **Ölümlü ölçüm:** `DerivedId` ilk yazımda
+`CreatePlayer.DeterministicId` olarak `internal` bir yardımcıydı ve
+`StartMatch` başka bir use case'ın içine uzanıyordu. Testler de göremiyordu.
+Ayrı bir `DerivedId` tipine taşındı.
+
+### D117 — Sıfır paket sınırı Application'a da genişletildi
+
+`DreamTeam.Application` **sıfır paket**. D110 bunu Domain ve Engine için
+söylemişti; M7'de use case katmanı da aynı sınırda tutuldu. Gerekçesi somut:
+use case katmanının ihtiyacı olan her şey .NET'in kendisidir; PostgreSQL,
+JWT ve SignalR **portların arkasında** durur.
+
+**Ölçüm (bu oturum, `dotnet list package`):**
+
+| Proje | Paket |
+|---|---|
+| `DreamTeam.Domain` | **SIFIR** |
+| `DreamTeam.MatchEngine` | **SIFIR** |
+| `DreamTeam.Simulator` | **SIFIR** |
+| `DreamTeam.Application` | **SIFIR** |
+| `DreamTeam.Infrastructure` | Npgsql 10.0.2, Dapper 2.1.79, System.IdentityModel.Tokens.Jwt 8.22.0 |
+| `DreamTeam.Api` | Microsoft.AspNetCore.Authentication.JwtBearer 10.0.9, System.IdentityModel.Tokens.Jwt 8.22.0 |
+
+### D118 — Yetkilendirme merkezileştirildi, grup ön eki boşaltıldı
+
+**Karar.** `MapGroup(string.Empty).RequireAuthorization()` + tam yollar.
+
+**Neden.** İlk yazımda her grup kendi ön ekiyle kurulmuştu
+(`MapGroup("/api/players")`) ve kök `MapGet("")` deseni
+**`/api/players/` üretiyordu** (son slash). ASP.NET bu isteği eşleştirmiyor
+ve 404 dönüyordu. Bu, gözle anlaşılmayıp saatlerce yanlış yere bakmaya
+yol açtı; `RouteRegistrationTests` yazıldı ve gerçek desen listesi
+**ölçüldü**. Boş ön ekli grup hem yetki kuralını tek yerde tutar hem de
+desenleri tam yol yapar.
+
+### D119 — `StateResponse.FromSequence` kuralı düzeltildi
+
+**Bulunan gerçek hata.** Snapshot istenmediğinde `FromSequence`,
+istemcinin gönderdiği sınır yerine **`CurrentSequence`** dönüyordu.
+Yanıt 1..1051 event içerirken `from=1051` diyordu; istemci "bu yanıtta
+1'den başladım" bilgisini kaybediyordu.
+
+**Kural (iki dal, tek kaynak).** `SessionCapture` artık
+`RequestedFrom` taşır ve API şunu yapar:
+- snapshot döndüyse sınır `SnapshotSequence`,
+- snapshot dönmediyse sınır `RequestedFrom`.
+
+`CurrentSequence` **kullanılmaz**; o "sunucu şu an burada" demektir ve
+ayrı alanda zaten vardır.
+
+### D120 — `MatchSession.Dispose` kilidi dispose etmez
+
+**Bulunan gerçek yarış koşulu.** Canlı maç biterken yürütücü oturumu
+depodan çıkarıp dispose ediyordu; aynı anda yeniden bağlanan bir istemci
+`CaptureForAsync` içindeydi ve `SemaphoreSlim.Release` çağrısı
+`ObjectDisposedException` atıyordu (kullanıcıya 500). M7 API testleri 4
+koşudan 1'inde bu yüzden kırılıyordu.
+
+**Çözüm.** `_gate.Dispose()` **kaldırıldı**. `SemaphoreSlim` yalnız
+`AvailableWaitHandle` okunduğunda yönetilemez kaynak tutar; bu kod o
+özelliği kullanmaz, dolayısıyla dispose etmek hiçbir şeyi serbest
+bırakmaz, yalnızca yarışma yaratır. Kapatma, oturumu depodan çıkarmak
+ve `_disposed` işaretini set etmektir; yarım kalmış bir çağrı normal
+şekilde tamamlanır.
+
+**Kanıt.** Düzeltmeden sonra API testleri **8 ardışık koşuda** 26/26.
+
+### D121 — Tel sözleşmesi: payload camelCase
+
+**Bulunan gerçek tutarsızlık.** Event zarfı camelCase, payload'ı
+PascalCase idi. İstemci bir alanı `sequence`, diğerini `HomeScore`
+olarak görmek zorundaydı. Payload da camelCase yapıldı.
+
+**Not.** Veritabanındaki JSONB **farklı ve PascalCase kalır**; o iç
+bir biçimdir ve C# tipini yansıtır. İkisinin neden farklı olduğu
+`MatchEventDtoFactory` içinde yazılıdır.
+
+### D122 — Migration 7 tablo, planda 6 yazıyordu
+
+`migrations/001_initial_schema.sql` yedi tablo açar: `users`, `players`,
+`teams`, `roster_entries`, `matches`, `match_events`,
+`manager_commands`. Planda altı yazıyordu. Fark, komut günlüğünün
+ayrı tablo olmasıdır; 07 §5'in "aynı CommandId yeniden gelirse aynı
+sonuç döner" kuralı `UNIQUE (match_id, command_id)` ile **veritabanında**
+garanti edilir ve bunun bir yeri olmalıdır.
+
+Elde edilmeyen tablo yok: ekonomi, rating geçmişi, scout, transfer, lig.
+
+### M7'de **yapılmayan** ve açık kalanlar
+
+| Konu | Durum |
+|---|---|
+| **Migration gerçek PostgreSQL'de çalıştırılmadı** | `dreamteam_test` rolü yok. `localhost:5432` dinliyor, `pg_hba.conf` tamamı `scram-sha-256`; superuser parolası bilinmiyor. **Bu oturumda migration ÇALIŞTIRILMADI ve "geçti" denemez.** |
+| `UNIQUE (match_id, sequence)` gerçek DB'de kanıtlanmadı | Bellek içi sahte ile test edildi; sahte `IgnoreUniqueConstraint` moduyla karşılaştırıldı. |
+| Kimlik anahtarı rotasyonu | Yok. İki anahtar aynı anda doğrulanamaz. |
+| Hız ayarı ve pause/resume | Yok (M8+). |
+| Maç kurtarma (D113) | Yok, ve **olması istenmiyor**. |
+| `record.Equals` kalıcı düzeltmesi (D87) | M11'e ertelendi. M7'de `SetupDigest` ve `MatchLifecycle` ile aşıldı. |
+
+### Ölçülen sonuç (bu oturum)
+
+| Ölçüm | Sonuç |
+|---|---|
+| `dotnet build -c Release --no-incremental` | 0 uyarı, 0 hata |
+| `dotnet build -c Debug` | 0 uyarı, 0 hata |
+| `dotnet test -c Release` | 528/528 (340 motor + 103 simulator + 59 application + 26 api) |
+| `dotnet test -c Debug` | 528/528 |
+| API testleri flake kontrolü | 8 ardışık koşu, 26/26 |
+| Dondurulmuş 8 sözleşme | `git diff` boş (değişmedi) |
+| Motor yasaklı API taraması | Temiz (2 isabet XML yorumu) |

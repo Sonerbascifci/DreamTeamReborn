@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    M7: Api. HTTP, auth (JWT bearer), SignalR hub ve composition root.
+
+    PAKET ALABILIR. Surumler ONCEDEN OLCULEREK secildi
+    (docs/plans/M7_IMPLEMENTATION_PLAN.md bolum 3): bu ortamda nuget.org'a
+    erisim YOK. NU1510 onlemi: Microsoft.Extensions.Hosting acikca
+    PackageReference olarak VERILMEZ; Web SDK onu zaten getirir.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DreamTeam.Infrastructure\DreamTeam.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DreamTeam.Api.Tests" />
+  </ItemGroup>
+
+</Project>

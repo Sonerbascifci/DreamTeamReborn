@@ -35,10 +35,39 @@ Oklar derleme/çağrı yönünü özetler; eventlerin server'dan client'a veri a
 | `src/DreamTeam.Application/` | Use case, runner orchestration, portlar | M7 |
 | `src/DreamTeam.Infrastructure/` | DB, persistence ve dış adaptörler | M7 |
 | `src/DreamTeam.Api/` | HTTP, auth, SignalR, composition root | M7 |
+| `tests/DreamTeam.Application.Tests/` | Use case, oturum sahipligi, pacer, digest | M7 |
+| `tests/DreamTeam.Api.Tests/` | Kimlik (T19), reconnect, uctan uca mac | M7 |
+| `migrations/` | Elle yazilmis SQL sema dosyalari | M7 |
+| `config/database/`, `config/auth/` | Giris dizesi ve anahtar **ornekleri** (sifre YOK) | M7 |
 | `web/` | React yönetim ekranları ve PixiJS | M8/M9 |
 
 Bu yollar yeni repo önerisidir. Var olan repo başka biçimdeyse önce gerçek yapıya eşleştirilir. `.sln`/`.slnx`, test framework'ü ve SDK kararı M0'da ortamla doğrulanır.
 
+### M7 sonrasi: denge belgesinin sahibi (D115)
+
+`config/engine/baseline.v0.1.json` dosyasini **hem CLI hem sunucu**
+okur. Okuyan tek kod `src/DreamTeam.MatchEngine/Config/BalanceConfigStore.cs`
+icindedir; M6'da `Simulator/Config/` altindaydi ve M7'de buraya **tasindi**.
+
+Neden tasindi: `Infrastructure` -> `Simulator` referansi 03'un bagimlilik
+grafigini ters cevirirdi, ikinci bir JSON okuyucu ise M6 D103'te yasaklanan
+"bu rapor hangi config ile uretildi" belirsizligini geri getirirdi.
+Sonuc: tek okuyucu, dogru yon, motor yine sifir paket (`System.Text.Json`
+BCL'dedir, M5 D88).
+
+Kural surumu de ayni sekilde tekillestirildi: `RulesIdentity.Current`.
+`EngineIdentity` dosyasi M6'da donduruldugu icin **degistirilmedi**; yeni
+dosya acildi.
+
+### M7 sonrasi: yetkilendirme kuralinin yeri
+
+Tum HTTP endpoint'leri `MapGroup(string.Empty).RequireAuthorization()`
+altinda map edilir ve **tam yol** kullanir. On ekli grup denemesi
+kaldirildi: grup kokundeki bos desen `/api/players/` (son slash) uretiyor
+ve istek 404 donuyordu. Yetki kurali tek yerde, gorunur ve unutulamaz
+sekilde durur. SignalR hub'inin kendi `[Authorize]` niteligi vardir.
+
+---
 ## Motor modülleri
 
 Core: MatchEngine, MatchState, PossessionState, clock ilerletme.

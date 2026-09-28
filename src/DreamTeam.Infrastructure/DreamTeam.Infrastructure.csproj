@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    M7: Infrastructure. PostgreSQL, persistence ve dis adaptorler.
+
+    PAKET ALABILIR. Bu ilk projedir. Surumler ONCEDEN OLCULEREK secildi
+    (docs/plans/M7_IMPLEMENTATION_PLAN.md bolum 3): bu ortamda nuget.org'a
+    erisim YOK, yerel onbellek disinda paket bulunamiyor (NU1101). Yeni bir
+    paket eklemeden ONCE onbellekte var oldugunu dogrulamak gerekir.
+
+    Dapper, EF Core degil: 03 generic repository'yi yasakliyor, 04 tekil
+    kisitlarin semada gorunur olmasini istiyor. Elle yazilmis SQL'de
+    UNIQUE (match_id, sequence) gozle gorulur.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DreamTeam.Application\DreamTeam.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+    <PackageReference Include="Dapper" Version="2.1.79" />
+    <!--
+      Jeton URETME burada: Infrastructure bir altyapi projesidir ve
+      HTTP katmani degildir. DOGRULAMA ise Api tarafinda
+      (Microsoft.AspNetCore.Authentication.JwtBearer). Iki ayri dogrulama
+      yolu olusturmamak icin middleware tek dogrulayicidir.
+    -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Migration tek dosya, iki yerde birden var: repoda INCELEMEK icin
+      (migrations/001_initial_schema.sql) ve calisma aninda ERISMEK icin
+      (gomulu kaynak). Iki kopyaya bölmek kayma riskidir; gomulu kaynak
+      repodaki dosyadan okunur, yani tek kaynak.
+    -->
+    <EmbeddedResource Include="..\..\migrations\*.sql">
+      <Link>migrations\%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

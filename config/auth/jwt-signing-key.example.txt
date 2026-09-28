@@ -1,0 +1,29 @@
+# =====================================================================
+# M7: JWT imzalama anahtari ORNEGI.
+#
+# BU DOSYA BIR ORNEKTIR. GERCEK ANAHTAR BURAYA YAZILMAZ ve git'e
+# GIRMEZ.
+#
+# ORTAM DEGISKENI ADI (Program.cs bunu okur):
+#   Jwt__SigningKey
+#
+# PowerShell:
+#   $env:Jwt__SigningKey = "<ureteceginiz-deger>"
+#
+# DEGERI NASIL URETIR SINIZ (PowerShell):
+#   $bytes = New-Object byte[] 48
+#   [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+#   [Convert]::ToBase64String($bytes)
+#
+# KURALLAR:
+#   * EN AZ 32 BAYT. Daha kisi bir anahtar HMAC guvenligini dusurur;
+#     sunucu acilista hata verir (JwtOptions.Validate).
+#   * HS256 kullanilir; algoritma degistirilemez.
+#   * Anahtar ROTASYON desteklenmez (M7). Bir anahtar olusturulup
+#     tum omur boyunca kullanilir. Iki farkli anahtarla imzalanmis
+#     jetonlar ayni anda dogrulanamaz.
+#   * Testler icin: tests/DreamTeam.Api.Tests/TestDoubles.cs
+#     icindeki ApiTestData.SigningKey. O deger SADECE testlerdedir.
+# =====================================================================
+
+ORNEK-ANAHTAR-BURAYA-EN-AZ-32-BAYT-OLMALI-DEGIL-GERCEK-ANAHTAR-DEGIL

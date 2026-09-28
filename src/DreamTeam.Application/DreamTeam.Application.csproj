@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    M7: Application katmani. SORUMLULUK: use case, port arayuzleri, match
+    session sahipligi ve duvar saati eslemesi.
+
+    SIFIR PAKET. Bu bilincli bir kisittir (docs/10 D110): motor ve domain
+    nasil sifir paketli kaldiysa, use case katmani da oyle kalir. Burada
+    kullanilacak her sey .NET'in kendisidir. Paket ihtiyaci olan her sey
+    IPort arkasinda, Infrastructure uygulamasinda durur.
+
+    D110 siniri: motorun Domain/Engine sifir paketli kalmasi bir tesaduf
+    degil, sozlesmedir. Application da ayni sinirlik icinde.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DreamTeam.Domain\DreamTeam.Domain.csproj" />
+    <ProjectReference Include="..\DreamTeam.MatchEngine\DreamTeam.MatchEngine.csproj" />
+  </ItemGroup>
+
+</Project>

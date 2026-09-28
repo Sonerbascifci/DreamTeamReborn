@@ -1,12 +1,18 @@
+// M7, D115: BU DOSYA SIMULATOR'DAN TASINDI. Simulator kalan tek okuyucudur ve
+// sunucu da ayni belgeyi ayni kodla okumalidir (D103: "denge kaynagi JSON
+// belgedir"). Iki ayri JSON okuyucu, "bu rapor hangi config ile uretildi?"
+// sorusunu tekrar ortaya cikarirdi. Bagimlilik grafigi 03'e uygun kalsin diye
+// Infrastructure -> Simulator eklenmedi; okuyucu motorun Config katmaninda
+// duruyor. System.Text.Json BCL'dedir, bu yuzden proje yine sifir paket kalir
+// (M5 D88).
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DreamTeam.MatchEngine.Config;
 using DreamTeam.MatchEngine.Core;
 
-namespace DreamTeam.Simulator.Config;
+namespace DreamTeam.MatchEngine.Config;
 
 /// <summary>
-/// M6: the versioned, on-disk balance document. This is the file calibration
+/// M6, moved in M7 (D115): the versioned, on-disk balance document. This is the file calibration
 /// edits; C# code is not the tuning surface.
 ///
 /// <para><b>What is here and what is not.</b> Every numeric model of
@@ -181,7 +187,7 @@ public static class BalanceConfigStore
         SchemaVersion = BalanceConfigDocument.CurrentSchemaVersion,
         Version = "v0.1",
         EngineVersion = EngineVersion.Current,
-        RulesVersion = Fixture.FixtureCatalog.RulesVersion,
+        RulesVersion = RulesIdentity.Current,
         Notes = "M5 baseline'i. M6 kalibrasyonu bu dosyayi degistirir.",
         Rules = RulesProfile.SimpleNbaInspired,
         Shot = ShotModel.Baseline,

@@ -4,6 +4,103 @@ Son güncelleme: 28 Eylül 2026.
 
 ## Şu anda
 
+- Aşama: **Uygulama tamamlandı.** M7 kodu yazıldı, ölçüldü ve aşağıdaki
+  açık kalem dışında tamamlandı.
+- Aktif milestone: **M7 (API, auth, persistence, canlı runner, reconnect).**
+- Test sayısı: **528** (340 motor + 103 simulator + 59 application + 26 api).
+  Dört test projesi. M6'da 443 idi.
+- Paket sınırı korundu: **Domain / MatchEngine / Simulator / Application
+  dördü de sıfır paket.** Ölçüldü (§17, D117).
+- Git: bu oturumun değişiklikleri **henüz commit edilmedi**.
+
+### M7'de yapılanlar (ölçülmüş)
+
+| Bileşen | Nerede | Kanıt |
+|---|---|---|
+| Use case + portlar | `src/DreamTeam.Application/` | 59 test, sıfır paket |
+| `MatchSession` tek sahip | `Runner/MatchSession.cs` | 100.000 eşzamanlı adım, sequence kesintisiz, epoch birebir |
+| `LivePacer` | `Runner/LivePacer.cs` | `ALiveMatchProducesTheSameEventsAsSimulate` geçti |
+| `SetupDigest` (D87 aşımı) | `Setup/SetupDigest.cs` | 18 alanın **her biri** tek tek sınandı |
+| PostgreSQL + Dapper | `src/DreamTeam.Infrastructure/` | Sembol derlendi; **migration çalıştırılmadı** |
+| Migration | `migrations/001_initial_schema.sql` | **ÇALIŞTIRILMADI** (aşağıda) |
+| JWT + yetki (T19) | `src/DreamTeam.Api/` | 12 yetkilendirme testi, hepsi geçti |
+| HTTP + SignalR | `src/DreamTeam.Api/` | 26 API testi, 8 ardışık koşuda kararlı |
+| Canlı yürütücü | `Realtime/LiveMatchRunner.cs` | Uçtan uca maç testi geçti |
+
+### Bulunan ve düzeltilen **gerçek** hatalar
+
+Bunlar varsayım değil, ölçümle bulundu. Ayrıntı `docs/10` §17.
+
+1. **`StateResponse.FromSequence` yanlış sınırı** (D119). İstemci "bu
+   yanıtta 1'den başladım" bilgisini kaybediyordu.
+2. **`MatchSession.Dispose` yarış koşulu** (D120). Maç biterken yeniden
+   bağlanan istemci 500 alıyordu. 4 koşudan 1'i kırılıyordu; düzeltmeden
+   sonra 8 koşu 26/26.
+3. **`GET /api/matches/{id}` zorunlu sorgu parametresi** olarak 400 dönüyordu.
+4. **Tel sözleşmesi tutarsızlığı** (D121): zarf camelCase, payload PascalCase.
+5. **`MatchSessionStore.GetOrAdd` sızıntısı**: kaybeden oturum dispose
+   edilmiyordu. İlk düzeltmede sonsuz döngü yapıldı; son hâli
+   `TryGetValue` + `TryAdd` ve tek seferlik kayıp temizliği.
+6. **`CreatePlayer` boş ad için istisna atıyordu**: 500 yerine 400
+   dönmeliydi. Diğer doğrulamalar `Fail` döndürüyordu; tutarsızlık giderildi.
+7. **Route grubu kökü son slash üretiyordu** (D118); `/api/players` 404 dönüyordu.
+
+### Doğrulama kanıtı (bu oturum)
+
+| Ölçüm | Sonuç |
+|---|---|
+| `dotnet build -c Release --no-incremental` | 0 uyarı, 0 hata |
+| `dotnet build -c Debug` | 0 uyarı, 0 hata |
+| `dotnet test -c Release` | **528/528** |
+| `dotnet test -c Debug` | **528/528** |
+| API testleri flake kontrolü | 8 ardışık koşu, 26/26 |
+| Dondurulmuş 8 sözleşme (`git diff`) | Boş |
+| Motor+Domain yasaklı API taraması | Temiz |
+
+### Açık kalan (M7'yi kapatmayan)
+
+1. **Migration gerçek PostgreSQL'de çalıştırılmadı.** `localhost:5432`
+   dinliyor ama `pg_hba.conf` tamamı `scram-sha-256` ve `dreamteam_test`
+   rolü yok. **Bu dosya hiçbir veritabanında çalıştırılmadı ve syntax
+   doğrulaması da yapılmadı.** Bu, 09 §M7'nin kabul maddelerinden
+   biridir ve **karşılanmadı.**
+2. **`UNIQUE (match_id, sequence)` ve `UNIQUE (match_id, command_id)`
+   gerçek veritabanında kanıtlanmadı.** Bellek içi sahtelerle test edildi.
+3. İnsan oynama testi yapılmadı.
+4. `AST/poss = 0.455` hâlâ sahte bir asist kavramı (M6'dan kalan; mekanizma
+   eksik, M7+ adayı).
+5. `record.Equals` kalıcı düzeltmesi (D87) M11'e ertelendi.
+
+### Sonraki tek uygulanabilir görev
+
+**`dreamteam_test` rolü oluşturulduktan sonra migration'ı gerçek
+PostgreSQL'de çalıştırmak ve UNIQUE kısıtlarını çalışan testlerle
+kanıtlamak.** Bunun için gereken tek şey superuser ile şu SQL'i
+çalıştırmak:
+
+```sql
+CREATE ROLE dreamteam_test LOGIN PASSWORD '<sifre>' CREATEDB;
+CREATE DATABASE dreamteam_test OWNER dreamteam_test;
+```
+
+Bu yapıldıktan sonra `tests/DreamTeam.Api.Tests/` altına
+`PostgresIntegrationTests` eklenir ve dokuz maddelik kabul listesinin
+eksik kalanı kapanır.
+
+### M7'de bilinçli olarak yapılmayanlar
+
+PvP (D112) · web istemcisi (M8) · ekonomi/bütçe/maaş (M10) ·
+`PlayerRatingHistory` (M11) · Redis · çoklu sunucu/lease · maç kurtarma
+(D113: iptal var, kurtarma yok) · EF Core ve migration aracı · hız ayarı
+ve pause/resume · JWT anahtar rotasyonu.
+
+---
+
+## Önceki oturumlar (M6 kapanışı)
+Son güncelleme: 28 Eylül 2026.
+
+## Şu anda
+
 - Aşama: **Planlama.** M6 uygulandı ve ölçüldü; **M7 planı yazıldı, onay bekliyor.**
 - Aktif milestone: **M7 (API, auth, persistence, canlı runner, reconnect).**
 - Uygulama yetkisi: **M7 için YOK.** Kullanıcının ayrı bir "planı uygula" mesajı gerekiyor.

@@ -1,7 +1,6 @@
 using System.Text;
 using DreamTeam.Simulator.Batch;
 using DreamTeam.Simulator.Cli;
-using DreamTeam.Simulator.Config;
 using DreamTeam.Simulator.Fixture;
 using DreamTeam.Simulator.Reporting;
 using DreamTeam.MatchEngine.Config;
